@@ -50,9 +50,11 @@ class Config:
     # mode -- it is what the OAuth metadata advertises and must match the URL
     # entered in the claude.ai connector. e.g. https://<svc>.run.app
     mcp_base_url: str = ""
-    # workos mode: the AuthKit domain (https://<name>.authkit.app). DCR-native,
-    # so no client id/secret needed here.
+    # workos mode: the AuthKit domain (https://<name>.authkit.app) + the WorkOS
+    # application's client id and secret (the WorkOS API key acts as the secret).
     workos_authkit_domain: str = ""
+    workos_client_id: str = ""
+    workos_client_secret: str = ""
     # supabase mode: the project URL (https://<ref>.supabase.co), NOT the DB DSN.
     supabase_project_url: str = ""
     # oidc mode: the provider's OIDC discovery URL + client credentials.
