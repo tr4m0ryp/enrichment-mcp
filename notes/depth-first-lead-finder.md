@@ -136,8 +136,6 @@ volume, and less to build/host.
 
 ## Open Questions
 <!-- Conceptual things about the IDEA we could not resolve yet. -->
-- [ ] **Product surface:** is the experience "a Claude skill you talk to" (chat as UI)
-  with the dashboard dropped, or is a read-only CRM view still wanted?
 - [ ] **ICP soundness:** is "custom stack" the real signal, or a proxy for "technical,
   receptive founder"? Could the highest-fit targets sometimes be non-custom?
 - [ ] **Cadence/volume:** how few is "depth-first" in practice -- a few leads per
