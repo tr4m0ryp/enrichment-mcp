@@ -99,6 +99,47 @@ is driven by Prospeo's network need, not the DB. Reusing Postgres keeps the asyn
 reuse intact; a fresh minimal schema sidesteps the old RLS/grants ceremony (or adds one
 grant). SQLite is the lighter-infra alternative but forfeits the asyncpg code reuse.
 
+### F7: Prospeo API confirmed -- enrich-person is current, NO_MATCH is free
+**Finding:** `POST /enrich-person` is the unified current finder; the old
+`/email-finder` is deprecated. NO_MATCH returns HTTP 400 + `error_code: NO_MATCH` and is
+**not charged**; 1 credit on email hit, 10 with mobile, duplicate within ~90d free.
+`only_verified_email: true` debits a credit ONLY when a verified email is returned.
+There is also `POST /domain-search` (company domain -> a LIST of people, 1 credit/50,
+free if no results or domain already searched) and a LinkedIn finder.
+**Evidence:** Agent D, Part A; https://prospeo.io/api-docs/enrich-person.
+**Implications:** The existing finder is correct and current -- no rewrite. Depth-first
+stays on enrich-person with a Claude-named person. `domain-search` is a possible
+"who-works-here" assist but returns generic/multi contacts, against the one-best
+principle; keep it out of scope unless naming the DM proves hard.
+
+### F8: Verifier confirmed; in-session guess+verify is a viable NO_MATCH fallback
+**Finding:** MyEmailVerifier `GET /api/validate_single.php?apikey=&email=` returns 5
+status buckets (Valid/Invalid/Catch-all/Unknown + disposable/role flags), costs 1
+credit even on Invalid, 100 free/day. In-session `web_fetch` can mine /team,/about for a
+pattern and guess+verify an email at ~20-50% yield -- fine as a free last resort after
+Prospeo NO_MATCH, NOT as a primary path; Catch-all/Unknown must be treated as
+unconfirmed.
+**Evidence:** Agent D, Part A (2,3); https://github.com/pat-myemailverifier/myemailverifier-api.
+**Implications:** Drop the Gemini-grounded fallback entirely (removes the last Gemini
+dependency). Fallback path = Claude mines the site in-session, guesses a pattern, and
+calls a server-side `verify_email` tool; accept only `Valid`. Keep the verifier; the
+paid key stays server-side.
+
+### F9: Mac-mini hosting -- Incus + a one-command Cloudflare publish helper; no mcpo
+**Finding:** Host `10.0.0.138` (4 GB RAM), user `tr4m0ryp`. Services run in **Incus**
+instances on bridge `10.42.0.0/24` (each with its own systemd); a Cloudflare named
+tunnel is already live, fronted by domain **frogbytes.xyz**. A helper
+`cf-publish <slug> http://<backend:port>` publishes any local HTTP service to
+`https://<slug>.frogbytes.xyz` in ~10s (PUTs tunnel ingress + a proxied CNAME).
+**mcpo is NOT installed** anywhere -- the brief's "existing mcpo" assumption is wrong.
+No local Postgres on the box (the only DB-ish stack is SFTPGo storage).
+**Evidence:** Agent D, Part B; `infra/skills/macmini-host/SKILL.md`.
+**Implications:** Hosting recipe = run the MCP server in a small Incus instance, then
+`cf-publish enrichment-mcp http://10.42.0.x:PORT`. No mcpo layer needed if FastMCP
+serves HTTP directly (Agent C confirms). Because cf-publish exposes it publicly,
+app-layer auth (bearer token) is required. No local Postgres reinforces reusing the
+cloud Supabase DSN over standing up a DB on the constrained box.
+
 ## References
 <!-- R# entries -->
 
