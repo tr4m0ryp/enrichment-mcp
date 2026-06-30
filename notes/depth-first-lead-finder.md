@@ -87,6 +87,14 @@ only does what the sandbox can't (paid outbound API + durable storage).
 (contacting, testing) stays behind an explicit human gate.
 **Reasoning:** Safety and separation of concerns; this is a sales-qualification tool.
 
+### C6: Deliverable is lead collection + context only -- no outreach, even in design
+**Decision:** The product ends at a stored, qualified lead carrying enough context to
+be useful. The mail pipeline is not implemented, and we do not design any outreach --
+no message framing, templates, or handoff flow.
+**Reasoning:** Keeps the build small and the scope unambiguous; outreach is a separate
+human concern, not this system's job.
+**Rejected:** Designing how the lead gets contacted (framing, messaging, handoff).
+
 ## Questions for Research
 <!-- Technical "best way to do X" questions, handed verbatim to /research. NOT answered here. -->
 - [ ] Prospeo NO_MATCH fallback: minimal Gemini-grounded lookup vs Claude web_fetch
