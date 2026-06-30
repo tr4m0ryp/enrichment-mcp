@@ -95,6 +95,22 @@ no message framing, templates, or handoff flow.
 human concern, not this system's job.
 **Rejected:** Designing how the lead gets contacted (framing, messaging, handoff).
 
+### C7: Lean lead context -- recognize it, one contact, one-line why
+**Decision:** Each lead record carries only the minimum: enough to *recognize* it
+(company name + domain + a few words on what it is), the **one** best contact, and a
+**one-line inline "why."** No evidence trail, no attack-surface dossier, no multi-link
+sourcing. A simple fit score stays as the keep-gate but is mechanism, not "context."
+**Reasoning:** Depth-first and low-volume -- the operator just needs to recognize the
+lead and have the contact. Keeps the record and the build minimal.
+**Rejected:** Rich context (full evidence trail, what-they-sell detail, attack-surface
+notes, source links).
+
+### C8: No resolvable contact -- still stored, flagged, not discarded
+**Decision:** A lead normally carries its one contact; if it can't be resolved, the
+qualified company is still stored (contact left empty / flagged), not thrown away.
+**Reasoning:** Don't waste the qualification work; an empty contact is a known gap, not
+a reason to forget the company.
+
 ## Questions for Research
 <!-- Technical "best way to do X" questions, handed verbatim to /research. NOT answered here. -->
 - [ ] Prospeo NO_MATCH fallback: minimal Gemini-grounded lookup vs Claude web_fetch
