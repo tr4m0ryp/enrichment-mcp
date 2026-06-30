@@ -33,7 +33,7 @@ def build_server(config: Config | None = None) -> FastMCP:
     Pure construction: safe to call at import time and from tests. No network.
     """
     config = config or get_config()
-    mcp = FastMCP(SERVER_NAME, auth=_build_auth(config))
+    mcp = FastMCP(SERVER_NAME, auth=build_auth(config))
     register_tools(mcp)
     return mcp
 
