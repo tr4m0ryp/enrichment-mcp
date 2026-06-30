@@ -133,8 +133,11 @@ On `found: true`, capture `email`, `email_verified`, `linkedin_url`,
 Mine the site in-session: `web_fetch` `/team`, `/about`, `/contact`, and the
 person's LinkedIn for a name and the email pattern (e.g. `first@`,
 `first.last@`). Construct ONE candidate address from the pattern and call
-`verify_email(email)`. Accept it **only** if `status` is `Valid`. If no `Valid`
-address results, store the lead anyway with the contact fields left empty and
+`verify_email(email)`. Accept it **only** if `valid` is `true` (`status ==
+"valid"`). A `catch_all` result (`valid: false`) is NOT a confirmation -- the
+domain accepts every address, so a guess would falsely look deliverable; treat
+it, and `"invalid"`, as unconfirmed. If no `valid` address results, store the
+lead anyway with the contact fields left empty and
 `contact_email_verified` false -- a qualified company is never discarded just
 because its contact could not be resolved (C8).
 
