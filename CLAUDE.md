@@ -1,0 +1,50 @@
+# enrichment_mcp -- Project Instructions
+
+Depth-first lead finder for a pentest / bug-bounty offering. A Claude session
+drives discovery and hard qualification with its own web tools; this repo is a
+small **FastMCP server** that owns Prospeo contact resolution and a durable
+`leads` store in Supabase Postgres.
+
+## Invariant (do not break)
+The system **finds, qualifies, and tracks only**. It never contacts a lead and
+never runs a test. There is no send / outreach / pentest-trigger tool -- if a
+task asks for one, it is out of scope.
+
+## Architecture
+- **Session (the lead-finder skill):** runs 1-3 discovery angles, qualifies
+  against the pentest/bounty ICP, keeps only score >= 7, names the one
+  decision-maker.
+- **Server (this repo):** `resolve_contact` (Prospeo enrich-person pool) +
+  `verify_email` (MyEmailVerifier fallback) + five CRUD/query tools over the
+  `leads` table. Streamable HTTP at `/mcp`, static bearer auth.
+- Seven tools total: `add_qualified_lead`, `list_leads`, `get_lead`,
+  `update_lead_status`, `get_uncontacted`, `resolve_contact`, `verify_email`.
+
+## Layout
+`src/mcp_server/`: `config.py` (dataclass + dotenv), `db/` (asyncpg pool + lead
+store), `contacts/` (Prospeo + verifier), `tools/` (@mcp.tool wrappers),
+`server.py` (FastMCP app). Each file < 300 lines, re-exported from its package
+root.
+
+## Stack
+Python 3.10+, `fastmcp` (>=3.4,<4), `asyncpg`, `aiohttp`, `python-dotenv`.
+Config is a plain `@dataclass` + `os.environ` -- **no pydantic**. No Gemini,
+Google, SMTP, Notion, or dashboard.
+
+## Run
+```
+pip install -r requirements.txt
+python -m src.mcp_server        # serves HTTP on MCP_HOST:MCP_PORT at /mcp
+```
+
+## Environment (.env -- see .env.example)
+- `SUPABASE_DB_URL` -- full Postgres DSN for the lead store (required)
+- `PROSPEO_API_KEYS` -- comma-separated enrich-person keys
+- `PROSPEO_ENRICH_MOBILE` -- pull mobile numbers (10x credits); default false
+- `MYEMAILVERIFIER_API_KEY` -- verifier key for the fallback path
+- `MCP_BEARER_TOKEN` -- static bearer the server enforces
+- `MCP_HOST` / `MCP_PORT` -- bind address; default `0.0.0.0:8000`
+
+## Reference
+`clay-enrichment/` is the previous Gemini pipeline, kept locally as a READ-ONLY
+salvage source and gitignored. Do not import from it or recreate it.

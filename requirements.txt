@@ -1,0 +1,4 @@
+fastmcp>=3.4,<4
+asyncpg>=0.29
+aiohttp
+python-dotenv
