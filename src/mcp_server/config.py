@@ -81,6 +81,14 @@ def _load_config() -> Config:
             or os.environ.get("MCP_PORT")
             or "8000"
         ),
+        mcp_oauth_provider=os.environ.get("MCP_OAUTH_PROVIDER", "").strip().lower(),
+        mcp_base_url=os.environ.get("MCP_BASE_URL", "").strip().rstrip("/"),
+        supabase_project_url=os.environ.get(
+            "SUPABASE_PROJECT_URL", "",
+        ).strip().rstrip("/"),
+        oidc_config_url=os.environ.get("MCP_OIDC_CONFIG_URL", "").strip(),
+        oidc_client_id=os.environ.get("MCP_OIDC_CLIENT_ID", "").strip(),
+        oidc_client_secret=os.environ.get("MCP_OIDC_CLIENT_SECRET", "").strip(),
     )
 
     if not cfg.supabase_db_url:
