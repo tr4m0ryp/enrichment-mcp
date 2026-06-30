@@ -84,6 +84,27 @@ def _require(config: Config, *fields: str) -> None:
         )
 
 
+def _workos(config: Config) -> AuthProvider:
+    """OAuth via WorkOS AuthKit -- DCR-native, the cleanest claude.ai path.
+
+    AuthKit handles Dynamic Client Registration, so the server only advertises
+    AuthKit as the auth server and verifies its tokens; no client_id/secret is
+    held here. Enable DCR for the AuthKit instance in the WorkOS dashboard.
+    """
+    from fastmcp.server.auth.providers.workos import AuthKitProvider
+
+    _require(config, "workos_authkit_domain", "mcp_base_url")
+    logger.info(
+        "Auth: WorkOS AuthKit OAuth (domain=%s, resource=%s)",
+        config.workos_authkit_domain,
+        config.mcp_base_url,
+    )
+    return AuthKitProvider(
+        authkit_domain=config.workos_authkit_domain,
+        base_url=config.mcp_base_url,
+    )
+
+
 def _supabase(config: Config) -> AuthProvider:
     """OAuth via the project's own Supabase Auth (DCR-ready for claude.ai)."""
     from fastmcp.server.auth.providers.supabase import SupabaseProvider
