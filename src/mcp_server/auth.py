@@ -72,6 +72,7 @@ def _require(config: Config, *fields: str) -> None:
     missing = [f for f in fields if not getattr(config, f, "")]
     if missing:
         env = {
+            "workos_authkit_domain": "WORKOS_AUTHKIT_DOMAIN",
             "supabase_project_url": "SUPABASE_PROJECT_URL",
             "mcp_base_url": "MCP_BASE_URL",
             "oidc_config_url": "MCP_OIDC_CONFIG_URL",
