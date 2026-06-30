@@ -111,6 +111,13 @@ qualified company is still stored (contact left empty / flagged), not thrown awa
 **Reasoning:** Don't waste the qualification work; an empty contact is a known gap, not
 a reason to forget the company.
 
+### C9: Chat-only -- drop the dashboard
+**Decision:** Drop the inherited `web/` dashboard. The product surface is the Claude
+skill plus the MCP store; you query leads by asking Claude.
+**Reasoning:** Lean leads (C7) fit in chat; a CRUD screen is pure overhead at this
+volume, and less to build/host.
+**Rejected:** Keeping a read-only CRM web view.
+
 ## Questions for Research
 <!-- Technical "best way to do X" questions, handed verbatim to /research. NOT answered here. -->
 - [ ] Prospeo NO_MATCH fallback: minimal Gemini-grounded lookup vs Claude web_fetch
