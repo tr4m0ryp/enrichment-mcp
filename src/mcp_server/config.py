@@ -86,6 +86,9 @@ def _load_config() -> Config:
         ),
         mcp_oauth_provider=os.environ.get("MCP_OAUTH_PROVIDER", "").strip().lower(),
         mcp_base_url=os.environ.get("MCP_BASE_URL", "").strip().rstrip("/"),
+        workos_authkit_domain=os.environ.get(
+            "WORKOS_AUTHKIT_DOMAIN", "",
+        ).strip().rstrip("/"),
         supabase_project_url=os.environ.get(
             "SUPABASE_PROJECT_URL", "",
         ).strip().rstrip("/"),
