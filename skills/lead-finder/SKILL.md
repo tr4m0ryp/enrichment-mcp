@@ -66,8 +66,12 @@ angle you can and proceed; do not stall asking for more.
 - `resolve_contact(company_name, domain, person_name, role)`
   -> `{found, email, email_verified, linkedin_url, job_title}`
   or `{found: false, reason}`. Resolves and verifies ONE named decision-maker.
-- `verify_email(email)` -> `{status, valid}`. Accept **only** a `Valid`
-  result; treat `Catch-all` / `Unknown` / `Invalid` as unconfirmed.
+- `verify_email(email)` -> `{status, valid, confidence, method}`, where `status`
+  is `"valid"` / `"invalid"` / `"catch_all"`. Accept the address **only** when
+  `valid` is `true` (equivalently `status == "valid"`). A **catch-all** domain
+  accepts any address, so it returns `status: "catch_all"`, `valid: false` --
+  treat it, and `"invalid"`, as **unconfirmed**. Never store a `catch_all` result
+  as a verified email.
 - `add_qualified_lead(domain, company_name, summary, location,
   webshop_platform, bounty_fit_score, why, contact_name?, contact_role?,
   contact_email?, contact_linkedin?, contact_email_verified?)` -- upserts on
