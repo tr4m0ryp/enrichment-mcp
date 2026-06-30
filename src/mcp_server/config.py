@@ -59,7 +59,13 @@ def _load_config() -> Config:
         ).strip(),
         mcp_bearer_token=os.environ.get("MCP_BEARER_TOKEN", "").strip(),
         mcp_host=os.environ.get("MCP_HOST", "0.0.0.0").strip(),
-        mcp_port=int(os.environ.get("MCP_PORT", "8000")),
+        # Cloud Run (and most PaaS) inject the listen port as PORT; honor it
+        # first so the container binds correctly, then MCP_PORT, then default.
+        mcp_port=int(
+            os.environ.get("PORT")
+            or os.environ.get("MCP_PORT")
+            or "8000"
+        ),
     )
 
     if not cfg.supabase_db_url:

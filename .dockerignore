@@ -1,0 +1,18 @@
+# Keep the build context small and secret-free.
+.git/
+.venv/
+venv/
+.claude/
+clay-enrichment/
+notes/
+research/
+tasks/
+deploy/
+__pycache__/
+**/__pycache__/
+*.pyc
+.env
+.env.*
+!.env.example
+.DS_Store
+*.md

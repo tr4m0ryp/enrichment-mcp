@@ -17,9 +17,9 @@ For each run, Claude drives the loop and calls the server only when it must:
     web_search / web_fetch  ── discovery, hard qualification, NO_MATCH fallback mining
         │  tool calls over HTTPS (static bearer)
         ▼
-  https://enrichment-mcp.frogbytes.xyz/mcp     (Cloudflare Tunnel — auto-HTTPS, no open ports)
+  https://enrichment-mcp-<num>.<region>.run.app/mcp     (Cloud Run — auto-HTTPS, scales to zero)
         │
-  Incus instance (10.42.0.x:8000) on the Mac mini
+  Cloud Run container (GCP) — env from Secret Manager
     FastMCP server  ── 7 tools, bearer auth, Streamable HTTP at /mcp
         │
         ▼
@@ -93,9 +93,11 @@ psql "$SUPABASE_DB_URL" -f schema/001_leads.sql
 
 ```bash
 claude mcp add --transport http enrichment-mcp \
-  https://enrichment-mcp.frogbytes.xyz/mcp \
+  https://enrichment-mcp-<num>.<region>.run.app/mcp \
   --header "Authorization: Bearer <MCP_BEARER_TOKEN>"
 ```
+
+Use the live Cloud Run service URL (printed by the deploy) with `/mcp` appended, and the `MCP_BEARER_TOKEN` from Secret Manager.
 
 **claude.ai web connector** has no static-bearer field (OAuth-or-authless only). The auth layer is built as a pluggable swap: move to FastMCP `OIDCProxy` + a hosted IdP if the web app is required.
 
@@ -170,17 +172,17 @@ Depth-first targeting keeps these low by design -- one resolution per kept lead,
 
 ### Hosting
 
-The server runs inside a dedicated **Incus** instance on the Mac mini and is published through the existing **Cloudflare named tunnel** -- outbound-only, automatic edge TLS, no inbound ports. See `deploy/`:
+The server runs on **Google Cloud Run** as a container: automatic HTTPS, a public `*.run.app` URL, and scale-to-zero (no cost when idle). Secrets live in **Secret Manager** and are injected as env vars; the app-layer bearer is what actually protects the public endpoint (`--allow-unauthenticated` at the IAM layer so claude.ai, which carries no Google identity, can reach it).
 
-- `deploy/enrichment-mcp.service` -- systemd unit that runs inside the instance.
-- `deploy/setup-incus.sh` -- the commented provisioning runbook.
+`deploy/deploy-cloudrun.sh` is the reproducible runbook (project, APIs, secrets, deploy). The `Dockerfile` builds the image; Cloud Run injects `$PORT`, which `config.py` honors. One-liner to redeploy after a code change:
 
 ```bash
-cf-publish enrichment-mcp http://<instance-ip>:8000
-# -> https://enrichment-mcp.frogbytes.xyz/mcp
+gcloud run deploy enrichment-mcp --source . --region <region> \
+  --allow-unauthenticated --max-instances 1 \
+  --set-secrets=MCP_BEARER_TOKEN=MCP_BEARER_TOKEN:latest,SUPABASE_DB_URL=SUPABASE_DB_URL:latest,PROSPEO_API_KEYS=PROSPEO_API_KEYS:latest,MYEMAILVERIFIER_API_KEY=MYEMAILVERIFIER_API_KEY:latest
 ```
 
-If the ASGI server returns `421 Misdirected Request` behind the tunnel, set `httpHostHeader` in the tunnel ingress (see the runbook).
+Cloud Run pins secret versions per revision, so after updating a secret value, redeploy (or roll a new revision) to pick it up.
 
 ## Roadmap
 
