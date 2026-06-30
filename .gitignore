@@ -1,0 +1,32 @@
+# Reference: previous version, kept locally but not tracked in this repo
+clay-enrichment/
+
+# Secrets / env
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# Node / web
+node_modules/
+.next/
+
+# Runtime artifacts
+logs/
+reports/
+database/
+*.db
+
+# Editor / OS
+.DS_Store
+.claude/
