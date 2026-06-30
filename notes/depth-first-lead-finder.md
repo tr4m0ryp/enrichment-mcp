@@ -133,3 +133,5 @@ human concern, not this system's job.
 - **Bulk people-discovery + SMTP-verify funnel** -- replaced by one-best-contact
   resolution on demand.
 - **Gemini-driven discovery/enrichment/scoring** -- replaced by Claude in-session.
+- **Designing outreach (framing, messaging, handoff flow)** -- out of scope; the
+  deliverable stops at a stored lead with context (C6).
