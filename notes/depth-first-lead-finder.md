@@ -28,15 +28,21 @@ that remembers state across sessions.
 
 ## Scope
 <!-- In scope vs out of scope. -->
-**In scope:** discovery + hard qualification (in the Claude session), one-best-contact
-resolution (MCP/Prospeo), a durable lead CRM with a status funnel (MCP), a lead-finder
-skill that drives the whole flow.
+**The deliverable is a lead collection with context -- nothing past that.** The
+system finds candidates, qualifies them, attaches the context that makes each lead
+worth picking up, resolves one best contact, and stores it. That is the end of the
+product.
 
-**Explicitly NOT:** no outbound email generation, no sending, no auto-follow-up. No
-triggering of any actual security test. No always-on autonomous loop. No bulk
-people-discovery. No cross-wiring with the pentest-authorization skill (kept fully
-separate for now). The system never contacts and never tests -- those stay behind a
-human gate.
+**In scope:** discovery + hard qualification (in the Claude session), one-best-contact
+resolution (MCP/Prospeo), a durable lead store with the per-lead context + a status
+field (MCP), a lead-finder skill that drives the flow.
+
+**Explicitly NOT:** the entire mail pipeline is not implemented -- no email generation,
+no sending, no follow-up. We also do NOT design or build any outreach at all: no
+message framing, no templates, no handoff workflow. No triggering of any security
+test. No always-on autonomous loop. No bulk people-discovery. No cross-wiring with the
+pentest-authorization skill. The system collects leads; what a human later does with
+them is out of scope here.
 
 ## Surfaces & Pages
 <!-- The concrete things that exist in the product: pages, screens, CLI commands, components. -->
