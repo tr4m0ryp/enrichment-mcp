@@ -369,10 +369,123 @@ app-layer auth (bearer token) is required. No local Postgres reinforces reusing 
 cloud Supabase DSN over standing up a DB on the constrained box.
 
 ## References
-<!-- R# entries -->
+
+### R1: FastMCP (standalone, jlowin)
+**Source:** https://pypi.org/project/fastmcp/ , https://gofastmcp.com/deployment/running-server
+**Takeaway:** `fastmcp` 3.4.2 (2026-06-06), Python >=3.10, ~26k stars, weekly releases.
+`@mcp.tool` decorator; serves Streamable HTTP via `mcp.run(transport="http", host, port)`
+at `/mcp`. The actively-maintained successor to the frozen FastMCP 1.0 in the official SDK.
+
+### R2: FastMCP OAuth proxy (the override path)
+**Source:** https://gofastmcp.com/servers/auth/oauth-proxy
+**Takeaway:** `OIDCProxy` "proxies DCR to work with Claude.ai," the lowest-effort route to a
+working claude.ai-web OAuth connector without hand-rolling OAuth 2.1 + DCR + PKCE.
+
+### R3: claude.ai custom connectors + auth
+**Source:** https://claude.com/docs/connectors/building , .../authentication , https://support.claude.com/en/articles/11175166
+**Takeaway:** Add remote MCP by URL; Streamable HTTP (SSE deprecated). Auth is `none` or
+OAuth (`oauth_dcr`/`oauth_cimd`, PKCE S256) -- **no static-bearer field**. Anthropic
+connects from cloud IP range `160.79.104.0/21`; server must be public HTTPS.
+
+### R4: Claude Code MCP (the chosen path)
+**Source:** https://code.claude.com/docs/en/mcp
+**Takeaway:** `claude mcp add --transport http <name> <url> --header "Authorization: Bearer
+<token>"` -- the CLI **does** accept a static bearer, unlike the web UI. claude.ai
+connectors also auto-appear in Claude Code when logged in.
+
+### R5: mcpo is the wrong layer here
+**Source:** https://github.com/open-webui/mcpo , https://docs.openwebui.com/features/extensibility/mcp/
+**Takeaway:** mcpo (0.0.20) re-exposes an MCP server as REST/OpenAPI for **non-MCP**
+consumers. An MCP client like claude.ai cannot consume its REST output. Unnecessary when
+the client speaks MCP -- which FastMCP serves directly.
+
+### R6: Cloudflare Tunnel mechanics + gotchas
+**Source:** https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/ , https://zenn.dev/hideakitamai/articles/6747c9bd56bd4f
+**Takeaway:** Named tunnel = outbound-only, auto edge-HTTPS, no inbound ports, real custom
+hostname required. Watch the `httpHostHeader` -> 421 Misdirected Request gotcha when the
+ASGI server validates Host.
+
+### R7: claude.ai-web OAuth is currently flaky
+**Source:** https://github.com/anthropics/claude-code/issues/11814 , https://github.com/jlowin/fastmcp/issues/972
+**Takeaway:** OAuth servers that pass MCP Inspector / Claude Code still sometimes fail in
+the claude.ai *web* UI (about:blank loop, zero inbound requests). Reinforces preferring the
+Claude Code CLI + static-bearer path for a self-hosted server today.
+
+### R8: Prospeo + MyEmailVerifier API docs
+**Source:** https://prospeo.io/api-docs/enrich-person , https://github.com/pat-myemailverifier/myemailverifier-api
+**Takeaway:** Prospeo `enrich-person` (X-KEY): 1 credit/email, NO_MATCH = HTTP 400 + free,
+duplicate <90d free, `only_verified_email` gates the debit. MyEmailVerifier
+`validate_single.php?apikey=&email=`: 5 status buckets, 1 credit even on Invalid, 100
+free/day.
 
 ## Discarded Approaches
 
+- **Porting the clay pipeline.** The volume funnel (8 always-on workers, supervisor,
+  backlog throttling, 13-strategy rotation) is deleted, not adapted -- depth-first runs in
+  the session on demand (F5). Becomes an explicit non-goal.
+- **Gemini / Google / SearXNG / Brave anywhere.** All discovery + the grounded fallback
+  move to Claude's session web tools; the ~5,170-line key-pool + Gemini client are dropped
+  (T1, F5).
+- **mcpo in front of the server** (R5) and **OAuth-now** (T6, R7) -- both rejected for this
+  personal, Claude-Code-driven tool.
+- **Any send / outreach / pentest-trigger tool.** Excluded by invariant; the server finds,
+  qualifies, and tracks only.
+- **Rich per-lead context** (evidence trail, attack-surface dossier) -- rejected by C7;
+  the record stays lean.
+
 ## Risks & Open Threads
 
+- [x] **Prospeo needs a name, not a domain** -- resolved: Claude names the decision-maker
+  in-session; `resolve_contact` takes `person_name` (T3).
+- [x] **DB pool buried in the to-delete dir** -- resolved: lift `asyncpg` pool into
+  `mcp_server/db/pool.py` before deleting `src/api_keys/` (F2, T2).
+- [x] **mcpo assumed but absent** -- resolved: not needed; FastMCP serves HTTP (T5, F9).
+- [ ] **Auth surface mismatch (the one to confirm in /refine).** Static bearer works for
+  Claude Code but NOT the claude.ai web connector (R3). If web is required, switch to
+  OIDCProxy + IdP (T6). Design auth as a pluggable layer so the swap is config-only.
+- [ ] **Host-header / origin validation behind the tunnel.** FastMCP/ASGI may 421 or reject
+  the `frogbytes.xyz` Origin; configure allowed hosts/origins and the tunnel
+  `httpHostHeader` (R6). Verify at deploy.
+- [ ] **Mac mini RAM (4 GB).** An Incus instance + Python server is light, but confirm the
+  instance memory cap leaves headroom alongside the existing Docker storage stack.
+- [ ] **Prospeo free-tier reliance.** Depth-first keeps credit use low, but the multi-key
+  pool is still free-tier; `prospeo_usage` (T4) is the early-warning signal for exhaustion.
+- [ ] **NO_MATCH fallback yield (~20-50%, F8).** Acceptable as a free last resort; if it
+  underperforms, revisit `domain-search` or a paid finder. Not a launch blocker.
+
 ## Build Plan
+
+Dependency-ordered; phase groups in [] can run in parallel.
+
+**Phase 1 -- Repo skeleton + config + DB pool.** New `src/mcp_server/` tree; `config.py`
+(dataclass + dotenv, the 7 env vars); `db/pool.py` (asyncpg pool lifted from
+`supabase_client.py`, DSN from `SUPABASE_DB_URL`); `.env.example`; trimmed
+`requirements.txt`; project `CLAUDE.md`. Gate: pool connects to Supabase.
+
+**Phase 2 -- [Salvage the keep-assets] + [Schema + lead store].**
+- 2a (parallel): port `contacts/prospeo.py`, `contacts/verifier.py`, `contacts/helpers.py`,
+  and `contacts/resolve.py` (the `_resolve_one` core stripped of Gemini + the worker loop).
+- 2b (parallel): `schema/001_leads.sql` (the `leads` table + status CHECK enum; keep
+  `prospeo_usage`); `db/leads.py` (CRUD/query); `db/usage.py`. Gate: schema applies; CRUD
+  round-trips a row.
+
+**Phase 3 -- MCP server + tools.** `server.py` (FastMCP app, bearer auth layer, run http);
+`tools/leads.py` (5 CRUD/query tools); `tools/resolve.py` (`resolve_contact`,
+`verify_email`). Depends on Phase 2. Gate: MCP Inspector lists 7 tools; each round-trips
+locally over stdio then http.
+
+**Phase 4 -- [The lead-finder skill].** Independent of 1-3, can run from the start.
+`SKILL.md` (depth-first workflow: angles -> qualify -> keep>=7 -> resolve_contact ->
+add_qualified_lead; aggressive discard); `references/icp.md` (rewritten pentest/bounty ICP,
+custom-webshop profile, qualification criteria, >=7 gate, blocklists); `references/angles.md`
+(the small set of discovery angles). No bundled code.
+
+**Phase 5 -- Hosting + wiring.** Incus instance on the Mac mini; systemd unit running the
+server on `0.0.0.0:8000`; `cf-publish enrichment-mcp http://10.42.0.x:8000`; set
+`MCP_BEARER_TOKEN` + the API keys in the instance `.env`; `claude mcp add --transport http
+... --header`. Gate: a Claude Code session lists and calls the tools end-to-end against the
+live `https://enrichment-mcp.frogbytes.xyz/mcp`.
+
+**Phase 6 -- End-to-end dry run.** One real depth-first session: discover a handful,
+qualify, resolve one contact, store a lean lead, query `get_uncontacted`. Confirm the
+invariant holds (no contact/test side effects) and credit logging works.
