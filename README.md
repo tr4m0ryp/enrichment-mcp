@@ -101,8 +101,9 @@ Use the live Cloud Run service URL (printed by the deploy) with `/mcp` appended,
 
 **claude.ai web connector (OAuth).** The web app cannot send a bearer header, so it uses OAuth. The server supports it via `MCP_OAUTH_PROVIDER` (see `auth.py`):
 
-- `supabase` -- reuse the project's **own Supabase Auth** as the identity provider (no separate IdP). Set `MCP_OAUTH_PROVIDER=supabase`, `SUPABASE_PROJECT_URL=https://<ref>.supabase.co`, and `MCP_BASE_URL=<the public run.app URL>`, then redeploy. In the Supabase dashboard enable a sign-in method and add claude.ai's callback under Auth -> URL Configuration. The server then returns a 401 with an RFC 9728 `resource_metadata` pointer to Supabase, and claude.ai (Settings -> Connectors -> Add custom connector -> paste `<base>/mcp`) drives the OAuth login.
-- `oidc` -- any OIDC provider (WorkOS AuthKit, Descope, Auth0, ...): set `MCP_OAUTH_PROVIDER=oidc`, `MCP_OIDC_CONFIG_URL`, `MCP_OIDC_CLIENT_ID` (+ secret), and `MCP_BASE_URL`.
+- `workos` (**recommended**) -- WorkOS AuthKit, which supports Dynamic Client Registration natively, so the server holds no client secret. Set `MCP_OAUTH_PROVIDER=workos`, `WORKOS_AUTHKIT_DOMAIN=https://<name>.authkit.app`, and `MCP_BASE_URL=<the public run.app URL>`, then redeploy. Enable DCR for the AuthKit instance in the WorkOS dashboard. The server returns 401 with an RFC 9728 `resource_metadata` pointer to AuthKit, and claude.ai (Settings -> Connectors -> Add custom connector -> paste `<base>/mcp`) drives the login.
+- `oidc` -- any OIDC provider (Descope, Auth0, Google, ...) via `OIDCProxy`: set `MCP_OIDC_CONFIG_URL`, `MCP_OIDC_CLIENT_ID` (+ secret), and `MCP_BASE_URL`.
+- `supabase` -- reuse the project's own Supabase Auth, but only if that project advertises an OAuth registration endpoint (many do not -- prefer `workos`).
 
 Switching modes is pure config -- no code change. Bearer mode (empty `MCP_OAUTH_PROVIDER`) stays available for Claude Code.
 
