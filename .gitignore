@@ -1,6 +1,11 @@
 # Reference: previous version, kept locally but not tracked in this repo
 clay-enrichment/
 
+# Flow pipeline scaffolding -- local planning only, never the product
+notes/
+research/
+tasks/
+
 # Secrets / env
 .env
 .env.*
