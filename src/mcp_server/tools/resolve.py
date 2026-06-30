@@ -96,9 +96,13 @@ async def verify_email(email: str) -> dict:
     Backs the in-session guess+verify fallback (T1/T8): when ``resolve_contact``
     returns no verified email, the session can construct the most likely address
     and confirm deliverability here. Returns ``{status, valid, confidence,
-    method}`` -- ``valid`` is the deliverability verdict, ``method`` is
-    ``"catch_all"`` when the domain accepts any address (treat as lower trust).
-    Errors if no MyEmailVerifier key is configured.
+    method}`` where ``status`` is one of ``"valid"`` / ``"invalid"`` /
+    ``"catch_all"``. A catch-all domain accepts ANY address, so a raw "valid"
+    there only means "the domain accepts mail", not "this mailbox exists" --
+    therefore ``valid`` is true ONLY for a confirmed, non-catch-all mailbox, and
+    a catch-all comes back ``status: "catch_all", valid: false``. Accept a
+    guessed address only when ``valid`` is true. Errors if no MyEmailVerifier key
+    is configured.
     """
     _, verifier = await _deps()
     if verifier is None:
@@ -106,9 +110,11 @@ async def verify_email(email: str) -> dict:
             "verify_email unavailable: MYEMAILVERIFIER_API_KEY is not configured"
         )
     result = await verifier.verify(email)
+    catch_all = result.method == "catch_all"
     return {
-        "status": "valid" if result.valid else "invalid",
-        "valid": result.valid,
+        "status": "catch_all" if catch_all
+        else ("valid" if result.valid else "invalid"),
+        "valid": result.valid and not catch_all,
         "confidence": result.confidence,
         "method": result.method,
     }
