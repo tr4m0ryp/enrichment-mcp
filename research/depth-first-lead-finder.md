@@ -26,7 +26,44 @@ migration, post-Prospeo verifier, deferred fingerprint tool.
 ## Decisions Made For You (override in /refine)
 
 ## Key Findings
-<!-- F# entries -->
+
+### F1: The Prospeo finder is a clean, reusable asset (enriches a KNOWN person)
+**Finding:** `src/people/prospeo_finder.py` (352 lines) is a self-contained async
+multi-key client: `POST https://api.prospeo.io/enrich-person`, `X-KEY` header, body
+`{data:{first_name,last_name,company_website}}`. Round-robin key pool with 1h cooldown
+on 429/INSUFFICIENT_CREDITS and permanent-dead on INVALID_API_KEY. Returns
+`ProspeoResult(email,email_verified,linkedin_url,phone,job_title,raw)` or `None` on
+NO_MATCH/INVALID_DATAPOINTS. Keys come from CSV env `PROSPEO_API_KEYS`; mobile gated by
+`PROSPEO_ENRICH_MOBILE` (1 credit email-only, 10 with mobile). Optional usage logging
+to a `prospeo_usage` table via an asyncpg pool.
+**Evidence:** Direct read + Agent A. Deps: `aiohttp`, `asyncpg`.
+**Implications:** `enrich-person` enriches a *known* person (needs first+last+domain) --
+it does NOT blind-search a domain. So the depth-first flow is: **Claude names the one
+decision-maker in-session, the server resolves/verifies that person's email.** The
+finder drops into the MCP server almost unchanged; only the DB-pool wiring changes.
+
+### F2: The DB pool is Supabase Postgres, entangled inside the to-delete dir
+**Finding:** `src/db/connection.py` is a 14-line re-export of
+`src/api_keys/supabase_client.py`, which builds the real `asyncpg` pool from a full DSN
+in env `SUPABASE_DB_URL` (min_size=1, max_size=2). `DATABASE_URL` in config is dead.
+Config system is plain `@dataclass` + `os.environ` + `python-dotenv` (no pydantic).
+**Evidence:** Agent A, Section 7.
+**Implications:** The brief says delete `src/api_keys/` entirely -- but the live DB pool
+lives there. Migration MUST lift the asyncpg pool into the new module (e.g.
+`mcp_server`/`db`) first. The store is already cloud Postgres reachable by DSN, so the
+MCP server needs server-side network mainly for Prospeo, not for the DB.
+
+### F3: The reusable resolution core vs the worker-loop wrapper are cleanly separable
+**Finding:** In `src/email_resolver/worker.py` (407 lines), `_resolve_one` +
+`ResolverResult` + `_verify` are the provider-agnostic resolution unit (Prospeo primary
+-> optional verifier -> Gemini-grounded fallback). `_fetch_resolvable_pairs`,
+`_persist_resolution`, `email_resolver_worker` are the always-on polling wrapper.
+Decision-maker selection today is a binary seniority gate (`title_filter.py`) plus an
+LLM "recall named decision-makers" prompt (`DISCOVER_CONTACTS`).
+**Evidence:** Agent A, Sections 5-6.
+**Implications:** Keep `_resolve_one`'s Prospeo+verify logic as the `resolve_contact`
+tool body; drop the loop. The "who is the decision-maker" step moves into the Claude
+session (replacing the LLM prompt + seniority gate).
 
 ## References
 <!-- R# entries -->
