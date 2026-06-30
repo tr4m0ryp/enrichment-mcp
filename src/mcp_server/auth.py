@@ -85,21 +85,34 @@ def _require(config: Config, *fields: str) -> None:
 
 
 def _workos(config: Config) -> AuthProvider:
-    """OAuth via WorkOS AuthKit -- DCR-native, the cleanest claude.ai path.
+    """OAuth via WorkOS AuthKit using the full ``WorkOSProvider`` (OAuth proxy).
 
-    AuthKit handles Dynamic Client Registration, so the server only advertises
-    AuthKit as the auth server and verifies its tokens; no client_id/secret is
-    held here. Enable DCR for the AuthKit instance in the WorkOS dashboard.
+    FastMCP performs Dynamic Client Registration for the claude.ai connector
+    itself and proxies the actual login to AuthKit with a single pre-registered
+    WorkOS client (id + secret). This does NOT depend on AuthKit advertising a
+    registration endpoint, so it works even when AuthKit's own metadata omits it.
+
+    Requires ``WORKOS_AUTHKIT_DOMAIN`` + ``WORKOS_CLIENT_ID`` +
+    ``WORKOS_CLIENT_SECRET`` + ``MCP_BASE_URL``. The WorkOS application must list
+    ``<MCP_BASE_URL>/auth/callback`` among its allowed redirect URIs.
     """
-    from fastmcp.server.auth.providers.workos import AuthKitProvider
+    from fastmcp.server.auth.providers.workos import WorkOSProvider
 
-    _require(config, "workos_authkit_domain", "mcp_base_url")
+    _require(
+        config,
+        "workos_authkit_domain",
+        "workos_client_id",
+        "workos_client_secret",
+        "mcp_base_url",
+    )
     logger.info(
-        "Auth: WorkOS AuthKit OAuth (domain=%s, resource=%s)",
+        "Auth: WorkOS OAuth proxy (domain=%s, resource=%s)",
         config.workos_authkit_domain,
         config.mcp_base_url,
     )
-    return AuthKitProvider(
+    return WorkOSProvider(
+        client_id=config.workos_client_id,
+        client_secret=config.workos_client_secret,
         authkit_domain=config.workos_authkit_domain,
         base_url=config.mcp_base_url,
     )
