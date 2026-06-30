@@ -3,13 +3,16 @@
 One function, ``build_auth``, selects the auth provider from config so the rest
 of the server never branches on it. Modes, by ``MCP_OAUTH_PROVIDER``:
 
-- ``"supabase"`` -- OAuth backed by the project's OWN Supabase Auth, no separate
-  identity provider. ``SupabaseProvider`` verifies Supabase-issued JWTs and
-  advertises the Dynamic-Client-Registration (DCR) metadata the claude.ai web
-  connector needs. Needs ``SUPABASE_PROJECT_URL`` + ``MCP_BASE_URL``.
-- ``"oidc"`` -- OAuth via any OIDC provider (WorkOS AuthKit, Descope, Auth0,
-  Google, ...) through ``OIDCProxy``. Needs ``MCP_OIDC_CONFIG_URL`` +
-  ``MCP_OIDC_CLIENT_ID`` (+ secret) + ``MCP_BASE_URL``.
+- ``"workos"`` -- OAuth via WorkOS AuthKit (the recommended claude.ai-web path).
+  AuthKit supports Dynamic Client Registration natively, so ``AuthKitProvider``
+  needs only ``WORKOS_AUTHKIT_DOMAIN`` + ``MCP_BASE_URL`` -- no client secret.
+- ``"oidc"`` -- OAuth via any OIDC provider (Descope, Auth0, Google, or WorkOS
+  the manual way) through ``OIDCProxy`` (FastMCP performs DCR itself). Needs
+  ``MCP_OIDC_CONFIG_URL`` + ``MCP_OIDC_CLIENT_ID`` (+ secret) + ``MCP_BASE_URL``.
+- ``"supabase"`` -- OAuth backed by the project's OWN Supabase Auth via
+  ``SupabaseProvider``. Needs ``SUPABASE_PROJECT_URL`` + ``MCP_BASE_URL``. NOTE:
+  this delegates DCR to Supabase, which only works if the project advertises a
+  registration endpoint -- many do not, so prefer ``workos``/``oidc``.
 - empty -- static bearer (Claude Code) when ``MCP_BEARER_TOKEN`` is set, else
   authless (local dev only).
 
