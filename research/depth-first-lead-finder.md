@@ -65,6 +65,40 @@ LLM "recall named decision-makers" prompt (`DISCOVER_CONTACTS`).
 tool body; drop the loop. The "who is the decision-maker" step moves into the Claude
 session (replacing the LLM prompt + seniority gate).
 
+### F4: The old denormalized lead row already matches the target shape
+**Finding:** `contact_campaigns` (a denormalized junction) + the `leads_full` view
+already carry exactly the fields a lead needs: company_name, website, location,
+job_title, email, email_verified, linkedin_url, phone, a fit score, score_reasoning,
+context, and a status. The old per-table split (companies / contacts /
+contact_campaigns / campaigns / emails / 2 join tables) is what collapses to ONE
+`leads` table. Status enum today is `outreach_status` (New -> ... -> Sent -> Replied).
+**Evidence:** Agent B, Section 1; `schema/016_leads_full_gemini_status.sql`.
+**Implications:** The simplified schema is a single `leads` table whose columns are a
+trimmed `leads_full`, with the new status enum (qualified -> contact_resolved ->
+contacted -> replied -> closed/rejected). No junctions, no campaigns, no emails table.
+
+### F5: Deletion surface is large and self-contained (~5,170 lines + infra)
+**Finding:** `src/api_keys/` (4,871 lines, Gemini-key scraping/pooling) + `src/gemini/`
+(298) are the bulk. Plus: the entire `src/discovery/strategies/` 13-strategy apparatus
+(~982 lines) + `src/discovery/worker.py`, all 8 always-on workers, `src/email/`
+(gen+sender), `src/scoring/`, `src/person_research/`, `src/people/worker.py`, the
+supervisor `src/main.py`, `src/utils/backlog.py`, and the GCP/systemd deploy (7
+`clay-key-*` timers, `clay-pipeline`, `clay-brief`, `clay-web`, Nginx, SearXNG Docker).
+**Evidence:** Agent B, Sections 3-5.
+**Implications:** This is a near-total teardown; the new repo is built fresh, salvaging
+only the Prospeo finder, helpers, verifier, the `_resolve_one` core, and the (lifted)
+asyncpg pool. The old GCP-VM hosting is fully replaced by the Mac-mini MCP host.
+
+### F6: Hosting today is GCP-VM systemd; DB is cloud Supabase reachable by DSN
+**Finding:** Runs on a GCP e2-micro VM as systemd services from `/opt/clay-enrichment`.
+The DB, however, is Supabase cloud Postgres via `SUPABASE_DB_URL` (a plain DSN), with
+RLS + grants on every table. The `postgres` DSN role bypasses RLS.
+**Evidence:** Agent B, Section 5; CLAUDE.md.
+**Implications:** The DB is reachable from anywhere by DSN, so where the MCP server runs
+is driven by Prospeo's network need, not the DB. Reusing Postgres keeps the asyncpg
+reuse intact; a fresh minimal schema sidesteps the old RLS/grants ceremony (or adds one
+grant). SQLite is the lighter-infra alternative but forfeits the asyncpg code reuse.
+
 ## References
 <!-- R# entries -->
 
