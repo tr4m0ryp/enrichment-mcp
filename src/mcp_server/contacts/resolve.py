@@ -144,4 +144,10 @@ async def _verify(
     except Exception:
         logger.exception("resolve_contact: verify call raised for %s", email)
         return False
-    return bool(getattr(result, "valid", False))
+    # Reject catch-all domains: they accept every address, so a "valid" verdict
+    # there is not a real confirmation that THIS mailbox exists. Only a
+    # non-catch-all valid result counts as verified.
+    return (
+        bool(getattr(result, "valid", False))
+        and getattr(result, "method", "") != "catch_all"
+    )
