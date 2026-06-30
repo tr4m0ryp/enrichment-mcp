@@ -38,10 +38,12 @@ _BEARER_CLIENT_ID = "lead-finder-session"
 def build_auth(config: Config) -> AuthProvider | None:
     """Return the server's single auth layer, or ``None`` for authless dev."""
     provider = config.mcp_oauth_provider
-    if provider == "supabase":
-        return _supabase(config)
+    if provider == "workos":
+        return _workos(config)
     if provider == "oidc":
         return _oidc(config)
+    if provider == "supabase":
+        return _supabase(config)
     if provider:
         raise ValueError(
             f"Unknown MCP_OAUTH_PROVIDER={provider!r}; "
