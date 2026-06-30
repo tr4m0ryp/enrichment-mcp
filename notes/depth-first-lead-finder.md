@@ -113,18 +113,15 @@ human concern, not this system's job.
 
 ## Open Questions
 <!-- Conceptual things about the IDEA we could not resolve yet. -->
-- [ ] **The receptiveness bet + framing.** The whole model rests on custom-webshop
-  operators *welcoming* an unsolicited "I'll find vulnerabilities for a bounty"
-  approach. How is the offer framed so it reads as a friendly researcher, not a
-  threat/shakedown? This is the make-or-break conceptual risk.
-- [ ] **The human handoff.** The system stores qualified leads + one contact but never
-  contacts. What is the operator's actual daily loop, and what's the output they act on?
+- [ ] **What is "context"?** The deliverable is a lead + context, so the central
+  question is what each lead record should carry to be worth picking up: which signals,
+  evidence, and notes matter, and how much. (Active discussion topic.)
 - [ ] **Product surface:** is the experience "a Claude skill you talk to" (chat as UI)
   with the dashboard dropped, or is a read-only CRM view still wanted?
 - [ ] **ICP soundness:** is "custom stack" the real signal, or a proxy for "technical,
   receptive founder"? Could the highest-fit targets sometimes be non-custom?
 - [ ] **No resolvable contact:** if Prospeo can't find the best contact, is the lead
-  still kept (for manual LinkedIn outreach) or discarded?
+  still kept (with company context only) or discarded?
 - [ ] **Cadence/volume:** how few is "depth-first" in practice -- a few leads per
   session? per week? This sizes how hard to qualify and how many angles to run.
 
