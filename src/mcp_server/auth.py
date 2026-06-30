@@ -3,9 +3,11 @@
 One function, ``build_auth``, selects the auth provider from config so the rest
 of the server never branches on it. Modes, by ``MCP_OAUTH_PROVIDER``:
 
-- ``"workos"`` -- OAuth via WorkOS AuthKit (the recommended claude.ai-web path).
-  AuthKit supports Dynamic Client Registration natively, so ``AuthKitProvider``
-  needs only ``WORKOS_AUTHKIT_DOMAIN`` + ``MCP_BASE_URL`` -- no client secret.
+- ``"workos"`` -- OAuth via WorkOS AuthKit (the recommended claude.ai-web path),
+  using the full ``WorkOSProvider`` OAuth proxy: FastMCP does DCR for claude.ai
+  and proxies login to AuthKit with a pre-registered client. Needs
+  ``WORKOS_AUTHKIT_DOMAIN`` + ``WORKOS_CLIENT_ID`` + ``WORKOS_CLIENT_SECRET`` +
+  ``MCP_BASE_URL``; register ``<MCP_BASE_URL>/auth/callback`` in the WorkOS app.
 - ``"oidc"`` -- OAuth via any OIDC provider (Descope, Auth0, Google, or WorkOS
   the manual way) through ``OIDCProxy`` (FastMCP performs DCR itself). Needs
   ``MCP_OIDC_CONFIG_URL`` + ``MCP_OIDC_CLIENT_ID`` (+ secret) + ``MCP_BASE_URL``.
