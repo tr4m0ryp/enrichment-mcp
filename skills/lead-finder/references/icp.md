@@ -129,7 +129,7 @@ When a lead clears the gate, store exactly these via `add_qualified_lead`.
 | `webshop_platform` | One of `custom` / `shopify` / `woocommerce` / `unknown`. For a kept lead this is `custom` or `unknown` (a known platform would have been discarded). |
 | `bounty_fit_score` | The integer 0-10 total from the rubric (>= 7 for a stored lead). |
 | `why` | **ONE line.** The rationale with the **receptiveness evidence folded in** -- e.g. "Custom Laravel storefront, accounts + bespoke checkout; no bounty program, founder posts on web security." No multi-line evidence trail (C7). |
-| `contact_name`, `contact_role`, `contact_email`, `contact_linkedin`, `contact_email_verified` | The ONE best contact, if resolved. All nullable -- a qualified lead with no resolvable contact is still stored (C8). `contact_email_verified` is true only for a Prospeo-verified email or a `Valid` `verify_email` result. |
+| `contact_name`, `contact_role`, `contact_email`, `contact_linkedin`, `contact_email_verified` | The ONE best contact, if resolved. All nullable -- a qualified lead with no resolvable contact is still stored (C8). `contact_email_verified` is true only for a Prospeo-verified email or a `verify_email` result with `valid: true` (status `"valid"`, never `catch_all`). |
 
 ### Field hard rules
 
