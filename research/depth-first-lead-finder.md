@@ -14,16 +14,244 @@ resolve_contact selection + credit metering, MCP hosting + auth, simplified sche
 migration, post-Prospeo verifier, deferred fingerprint tool.
 
 ## Recommended Technical Design
-<!-- filled after investigation -->
+
+Build a **new, small Python repo** (`enrichment_mcp`) that is a **FastMCP server** plus
+a **lead-finder skill** -- not a port of the old pipeline. The old clay system is a
+reference only; we salvage four files and rebuild the rest.
+
+**The server** (`fastmcp` 3.4.2, Streamable HTTP at `/mcp`) exposes **7 tools** over a
+**single `leads` table** in the existing Supabase Postgres (reached by `asyncpg` via the
+`SUPABASE_DB_URL` DSN -- no new DB on the constrained Mac mini). Five tools are CRUD/query
+over the lead store; one (`resolve_contact`) runs the salvaged multi-key **Prospeo**
+`enrich-person` pool server-side to verify the email of a Claude-named decision-maker;
+one (`verify_email`) wraps **MyEmailVerifier** for the fallback path. **No mcpo, no
+Gemini, no Google, no SMTP, no dashboard.**
+
+**The skill** drives everything in the Claude session: it runs 1-3 discovery angles with
+the session's own `web_search`/`web_fetch`, qualifies hard against the rewritten
+pentest/bounty ICP, keeps only score >= 7, then calls `resolve_contact` for the one best
+contact and `add_qualified_lead` to store a **lean** record (recognize-it + one contact +
+one-line why). On a Prospeo `NO_MATCH`, the skill mines the site in-session, guesses the
+email pattern, and confirms it with `verify_email` -- accepting only `Valid`.
+
+**Hosting:** run the server in a small **Incus instance** on the Mac mini, then
+`cf-publish enrichment-mcp http://10.42.0.x:8000` to expose
+`https://enrichment-mcp.frogbytes.xyz/mcp` with auto-HTTPS and no open ports. Auth is a
+**static app-layer bearer** added via `claude mcp add --transport http ... --header`;
+OAuth is a documented config-swap if the claude.ai web connector is needed.
+
+The data flow holds the vision's invariant: **web tools run in the session; Prospeo +
+state run on the server; the system never contacts and never tests.**
 
 ## Decisions
-<!-- T# entries, filled as resolved -->
+
+### T1: Prospeo NO_MATCH fallback -- Claude in-session guess + verify_email; drop Gemini
+**Decision:** Remove the Gemini-grounded finder entirely. Primary resolution is Prospeo
+`enrich-person` on a Claude-named person. On `NO_MATCH` (free, HTTP 400), the skill mines
+/team,/about,/contact + LinkedIn in-session, infers the email pattern, and calls a
+server-side `verify_email` tool; only a `Valid` MyEmailVerifier result is accepted,
+Catch-all/Unknown are treated as unconfirmed.
+**Why:** Removes the last Gemini dependency and the ~4,900-line key-pool that fed it (F5);
+the guess+verify path is a fine free last-resort at ~20-50% yield (F8). Verification, not
+guessing, is where reliability comes from -- so the verifier stays.
+**Alternatives rejected:** Keep a minimal single-key Gemini grounded fallback -- keeps a
+whole SDK + a paid key + the `gemini_finder_usage` table for marginal lift over
+guess+verify. `domain-search` as the blind fallback -- returns multi/generic contacts,
+against the one-best principle (F7).
+**Confidence:** high.
+
+### T2: State store -- reuse the existing Supabase Postgres via asyncpg, fresh schema
+**Decision:** Keep `asyncpg` against `SUPABASE_DB_URL`; lift the pool out of the
+to-delete `src/api_keys/supabase_client.py` into `mcp_server/db/pool.py`. Create one new
+`leads` table in the same Supabase project; do NOT migrate old rows.
+**Why:** The DB is already cloud-durable and reachable by DSN (F6), the Mac mini has only
+4 GB RAM and no local Postgres (F9), and asyncpg reuse keeps the Prospeo usage-logging and
+resolution core intact (F1, F3). The old rows are the wrong ICP (Avelero/DPP), so a fresh
+empty table is correct, not a backfill.
+**Alternatives rejected:** Local SQLite -- lighter infra but forfeits asyncpg reuse and
+off-box durability; logged as an override. Stand up Postgres on the Mac mini -- memory
+pressure for no gain over the existing cloud DB.
+**Confidence:** high.
+
+### T3: resolve_contact -- Claude names the decision-maker; server verifies one person
+**Decision:** `resolve_contact(company_name, domain, person_name, role?)`. The server
+`split_name`s the Claude-supplied person, runs the multi-key Prospeo `enrich-person` pool
+with `only_verified_email` semantics, and returns ONE contact (email, linkedin, title,
+verified) or a not-found signal. It is read-only w.r.t. `leads` (writes only the
+credit-usage row); Claude then stores via `add_qualified_lead`/`update_lead_status`.
+**Why:** `enrich-person` enriches a known person, not a blind domain (F1, F7); depth-first
+already has Claude identify the single decision-maker during qualification, so naming the
+person in-session replaces the old LLM "recall decision-makers" prompt + seniority gate
+(F3). Keeping the tool write-free makes it idempotent and composable.
+**Alternatives rejected:** Have the server discover the decision-maker (re-introduces an
+LLM/discovery dependency the vision moved into the session). resolve_contact auto-writing
+the lead (couples resolution to storage; harder to re-run).
+**Confidence:** high.
+
+### T4: Credit metering -- keep the prospeo_usage table and the finder's logging
+**Decision:** Keep the existing `prospeo_usage` table and pass the asyncpg pool to
+`ProspeoFinder` as its `usage_pool`, so every call logs `(key_prefix, credits, domain,
+free_dedup)`. Expose a small `prospeo_credits` read via `list_leads`-style query if
+needed; otherwise it's queryable directly.
+**Why:** The finder already writes it when given a pool (F1); credit visibility matters
+for a paid multi-key free-tier pool. Near-zero cost to keep.
+**Alternatives rejected:** Drop usage logging (loses the only view into credit burn).
+**Confidence:** high.
+
+### T5: MCP hosting + transport -- FastMCP Streamable HTTP, no mcpo, Incus + cf-publish
+**Decision:** `fastmcp` 3.4.2 serving `transport="http"` at `/mcp`. Run it in a dedicated
+Incus instance on the Mac mini bound to `0.0.0.0:8000`; publish with
+`cf-publish enrichment-mcp http://10.42.0.x:8000` -> `https://enrichment-mcp.frogbytes.xyz`.
+A systemd unit inside the instance keeps it alive. mcpo is NOT used.
+**Why:** FastMCP serves the MCP protocol over HTTP natively; mcpo emits REST/OpenAPI that
+an MCP client cannot consume, and isn't installed anyway (F9, R5/R6). cf-publish is the
+established one-command tunnel recipe on this host (F9), giving auto-HTTPS and no inbound
+ports.
+**Alternatives rejected:** mcpo in front (wrong protocol for claude.ai). Anthropic's new
+"MCP tunnels" preview (promising, but cf-publish is already wired and proven here).
+Quick/throwaway tunnel (no stable hostname).
+**Confidence:** high.
+
+### T6: Auth -- static app-layer bearer (Claude Code path), pluggable to OAuth
+**Decision:** Enforce a static bearer (`MCP_BEARER_TOKEN`) in the server via FastMCP's
+token verification; connect with
+`claude mcp add --transport http enrichment-mcp https://enrichment-mcp.frogbytes.xyz/mcp
+--header "Authorization: Bearer <token>"`. Structure the auth as one pluggable layer so
+swapping to FastMCP `OIDCProxy` + a hosted IdP is config, not a rewrite.
+**Why:** claude.ai's web connector is OAuth-or-authless (no static-bearer field) and its
+OAuth path is currently flaky (R7, R8); the Claude Code CLI accepts a static bearer and is
+the most reliable path for a personal tool. A bearer check is ~5 lines vs a ~300-line
+OAuth/DCR/PKCE subsystem. The override (OIDCProxy) costs only an IdP signup + config later,
+so nothing is wasted.
+**Alternatives rejected:** OAuth now via OIDCProxy (premature; flaky web path). Authless +
+Cloudflare IP-allowlist to `160.79.104.0/21` (blocks the Claude Code CLI, which connects
+from your IP). Cloudflare Access service tokens (claude.ai can't inject `CF-Access-*`
+headers). **This is the one preference call flagged in "Decisions Made For You."**
+**Confidence:** medium (depends on whether the claude.ai *web* app is a hard requirement).
+
+### T7: Simplified schema -- one lean `leads` table + the kept `prospeo_usage`
+**Decision:** A single `leads` table keyed on `domain` (PK): `company_name`, `summary`
+(what they sell, for recognition), `location`, `webshop_platform`
+(custom/shopify/woocommerce/unknown), `bounty_fit_score` SMALLINT, `why` (one-line
+rationale, receptiveness folded in), `status`, the one contact
+(`contact_name/role/email/linkedin/email_verified`, all nullable per C8), `created_at`,
+`updated_at` (trigger). Status CHECK enum: `qualified -> contact_resolved -> contacted ->
+replied -> closed/rejected`. Keep `prospeo_usage`. Drop every other old table.
+**Why:** Matches the lean-context decision exactly (C7): recognize-it + one contact +
+one-line why, nothing more (F4). The `postgres` DSN role bypasses RLS, so no RLS/grant
+ceremony is required for the server (F6).
+**Alternatives rejected:** Two tables (lead + contact 1:1) -- needless join at this
+volume; one row is simpler. Rich schema with evidence trail / attack-surface notes
+(rejected by C7).
+**Confidence:** high.
+
+### T8: Verifier -- keep MyEmailVerifier, expose as a `verify_email` tool
+**Decision:** Port `MyEmailVerifierClient` (`validate_single.php`, `MYEMAILVERIFIER_API_KEY`)
+and expose `verify_email(email) -> {status, valid}`. The Prospeo path relies on Prospeo's
+own `VERIFIED` status; `verify_email` exists for the in-session guess+verify fallback (T1).
+**Why:** Server-side because the paid key must not live in the session and the sandbox
+blocks the outbound call. One small tool keeps the fallback honest (accept only `Valid`).
+**Alternatives rejected:** Fold verification into `resolve_contact` only (the fallback
+needs a standalone verify for Claude-guessed emails). Drop the verifier (the fallback
+would deliver unconfirmed guesses).
+**Confidence:** high.
+
+### T9: Platform fingerprint -- defer; Claude judges custom-vs-platform from the page
+**Decision:** No deterministic fingerprint tool now (honors C2). `webshop_platform` is set
+by Claude's judgment and stored as a field. Leave a clearly-scoped hook for a future
+optional server tool (`fingerprint_platform(domain)` checking `cdn.shopify.com`,
+`/wp-content/`, platform headers) if accuracy disappoints.
+**Why:** Vision decision C2; simplest path, usually correct. It needs open-network fetch,
+so if added it belongs on the server, not the skill.
+**Alternatives rejected:** Build the fingerprint now (premature; C2 deferred it).
+**Confidence:** high.
+
+### T10: Tool surface, config, and repo layout
+**Decision:** Seven tools: `add_qualified_lead`, `list_leads`, `get_lead`,
+`update_lead_status`, `get_uncontacted` (state/CRM) + `resolve_contact`, `verify_email`
+(resolution). Config stays a plain `@dataclass` + `python-dotenv` (no pydantic), env:
+`SUPABASE_DB_URL`, `PROSPEO_API_KEYS`, `PROSPEO_ENRICH_MOBILE`, `MYEMAILVERIFIER_API_KEY`,
+`MCP_BEARER_TOKEN`, `MCP_HOST`, `MCP_PORT`. Repo is a domain-organized tree under
+`src/mcp_server/` (db/, contacts/, tools/), each file < 300 lines, re-exported from module
+roots, per the user's file-org standard.
+**Why:** Matches the vision's named tools and the kept config style (F2); no send/outreach
+/pentest-trigger tool, per the invariant.
+**Alternatives rejected:** Pydantic-settings (heavier; the dataclass works and matches the
+salvaged code). Flat module (violates the file-org standard).
+**Confidence:** high.
 
 ## Stack & Libraries
 
+| Component | Choice | Call | Licence / health | Notes |
+|---|---|---|---|---|
+| MCP framework | `fastmcp` 3.4.2 | **Adopt** | Apache-2.0; ~26k stars, weekly releases (R1) | Streamable HTTP at `/mcp`; `@mcp.tool`; built-in token auth |
+| Postgres driver | `asyncpg` >=0.29 | **Adopt** | Apache-2.0; mature | Pool from `SUPABASE_DB_URL`; reused from clay |
+| HTTP client | `aiohttp` | **Adopt** | Apache-2.0; mature | Prospeo + MyEmailVerifier calls (salvaged) |
+| Env loading | `python-dotenv` | **Adopt** | BSD; mature | `.env` -> dataclass config |
+| Prospeo client | `prospeo_finder.py` (salvaged) | **Extend** | internal | Drop in unchanged but rewire usage_pool |
+| Verifier client | `email_verifier_api.py` (salvaged) | **Extend** | internal | Expose as `verify_email` |
+| Resolution core | `_resolve_one` (salvaged) | **Extend** | internal | Strip Gemini + loop -> `resolve_contact` body |
+
+**Dropped deps:** `google-genai`, `notion-client`, `supabase` (py client was Auth/Storage
+only), `psycopg2-binary` (the sync prompt-override store is gone), `fastapi` + `uvicorn`
+(FastMCP brings its own ASGI server). New `requirements.txt`: `fastmcp`, `asyncpg`,
+`aiohttp`, `python-dotenv`.
+
 ## Architecture
 
+```
+  Claude session (lead-finder skill)
+    web_search / web_fetch  -- discovery + hard qualification + NO_MATCH fallback mining
+        |  tool calls over HTTPS (bearer)
+        v
+  https://enrichment-mcp.frogbytes.xyz/mcp   (Cloudflare Tunnel, auto-HTTPS)
+        |
+  Incus instance (10.42.0.x:8000) on the Mac mini
+    FastMCP server  src/mcp_server/
+      server.py            FastMCP app, bearer auth, run(transport=http)
+      config.py            dataclass + dotenv
+      db/   pool.py        asyncpg pool  <- SUPABASE_DB_URL
+            leads.py       add/list/get/update_status/get_uncontacted
+            usage.py       prospeo_usage logging
+      contacts/ prospeo.py ProspeoFinder (multi-key pool, enrich-person)
+                verifier.py MyEmailVerifierClient
+                resolve.py  resolve_contact logic (Prospeo + verify, no gemini/loop)
+                helpers.py  split_name / extract_domain
+      tools/ leads.py      @mcp.tool wrappers -> db.leads
+             resolve.py    @mcp.tool resolve_contact, verify_email
+        |
+        v
+  Supabase Postgres  (leads table + prospeo_usage)        Prospeo enrich-person (X-KEY pool)
+                                                          MyEmailVerifier validate_single
+```
+
+**Key contracts.** Tools return compact JSON and are idempotent: `add_qualified_lead`
+upserts on `domain`; `resolve_contact` returns `{email, email_verified, linkedin_url,
+job_title}` or `{found:false, reason}` and never writes a lead; `update_lead_status`
+validates the status enum. The skill is the only orchestrator -- the server holds no
+loop, no scheduler, no autonomous discovery. The single integration point the design
+hinges on is **"Claude names the decision-maker -> server verifies the email,"** which is
+why `resolve_contact` takes `person_name` rather than discovering it.
+
 ## Decisions Made For You (override in /refine)
+
+1. **Auth = static bearer + Claude Code path (T6).** Main alternative: OAuth via FastMCP
+   `OIDCProxy` + a hosted IdP (WorkOS AuthKit / Descope). *Change this if you must drive
+   the tool from the **claude.ai web app** rather than Claude Code -- the web connector
+   has no static-bearer field.* This is the most consequential call in the doc.
+2. **State store = reuse Supabase Postgres (T2).** Alternative: local SQLite file in the
+   Incus instance. *Change this if you'd rather have zero cloud dependency and don't mind
+   rewriting the small DB layer to aiosqlite.*
+3. **Single `leads` table, no contact sub-table (T7).** Alternative: `leads` + `contacts`
+   1:1. *Change this if you expect to keep multiple contacts per lead later.*
+4. **Keep `prospeo_usage` credit metering (T4).** *Drop it if you don't care about
+   tracking credit burn across the key pool.*
+5. **Hosting in a dedicated Incus instance (T5).** Alternative: run directly on the host or
+   in a Docker container. *Change this if you'd rather not spin a per-service instance.*
+6. **`verify_email` as a separate tool (T8).** *Fold into resolve_contact if you don't
+   want the fallback to be able to verify Claude-guessed addresses independently.*
+7. **Fresh empty `leads` table, no backfill (T2).** *Ask for a one-off `leads_full ->
+   leads` migration script if you want the old rows despite the ICP mismatch.*
 
 ## Key Findings
 
