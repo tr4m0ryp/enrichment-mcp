@@ -42,6 +42,21 @@ class Config:
     mcp_host: str = "0.0.0.0"
     mcp_port: int = 8000
 
+    # Auth mode (T6). Empty -> static-bearer (Claude Code) or authless.
+    # "supabase" -> OAuth via the project's own Supabase Auth (claude.ai web,
+    # no separate IdP). "oidc" -> any OIDC provider (WorkOS / Descope / Auth0).
+    mcp_oauth_provider: str = ""
+    # Public HTTPS base URL of THIS server (no /mcp), required for any OAuth
+    # mode -- it is what the OAuth metadata advertises and must match the URL
+    # entered in the claude.ai connector. e.g. https://<svc>.run.app
+    mcp_base_url: str = ""
+    # supabase mode: the project URL (https://<ref>.supabase.co), NOT the DB DSN.
+    supabase_project_url: str = ""
+    # oidc mode: the provider's OIDC discovery URL + client credentials.
+    oidc_config_url: str = ""
+    oidc_client_id: str = ""
+    oidc_client_secret: str = ""
+
 
 def _load_config() -> Config:
     cfg = Config(
