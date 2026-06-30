@@ -91,6 +91,8 @@ def _load_config() -> Config:
         workos_authkit_domain=os.environ.get(
             "WORKOS_AUTHKIT_DOMAIN", "",
         ).strip().rstrip("/"),
+        workos_client_id=os.environ.get("WORKOS_CLIENT_ID", "").strip(),
+        workos_client_secret=os.environ.get("WORKOS_CLIENT_SECRET", "").strip(),
         supabase_project_url=os.environ.get(
             "SUPABASE_PROJECT_URL", "",
         ).strip().rstrip("/"),
