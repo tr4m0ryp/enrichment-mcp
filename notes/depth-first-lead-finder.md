@@ -51,8 +51,8 @@ them is out of scope here.
 - **The MCP server tools** -- invisible plumbing the skill calls: `resolve_contact`
   (Prospeo) + lead CRUD/status/query tools (`add_qualified_lead`, `list_leads`,
   `get_lead`, `update_lead_status`, `get_uncontacted`).
-- **(Open) a read-only dashboard** -- inherited `web/` could survive as a CRM view, or
-  be dropped in favour of just asking Claude to query the store. See Open Questions.
+- **No dashboard.** The inherited `web/` is dropped (C9); querying leads happens by
+  asking Claude, which calls the MCP query tools. The chat is the UI.
 
 ## Key Concept Decisions
 <!-- High-level approach decisions agreed during discussion. -->
