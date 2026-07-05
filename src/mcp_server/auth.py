@@ -3,11 +3,20 @@
 One function, ``build_auth``, selects the auth provider from config so the rest
 of the server never branches on it. Modes, by ``MCP_OAUTH_PROVIDER``:
 
-- ``"workos"`` -- OAuth via WorkOS AuthKit (the recommended claude.ai-web path),
-  using the full ``WorkOSProvider`` OAuth proxy: FastMCP does DCR for claude.ai
-  and proxies login to AuthKit with a pre-registered client. Needs
-  ``WORKOS_AUTHKIT_DOMAIN`` + ``WORKOS_CLIENT_ID`` + ``WORKOS_CLIENT_SECRET`` +
-  ``MCP_BASE_URL``; register ``<MCP_BASE_URL>/auth/callback`` in the WorkOS app.
+- ``"authkit"`` -- STATELESS OAuth via WorkOS AuthKit (the recommended
+  claude.ai-web path): the server is a pure RFC 9728 resource server that
+  verifies AuthKit-issued JWTs against the tenant JWKS. claude.ai registers
+  itself with AuthKit (DCR must be enabled in the WorkOS dashboard) and
+  refreshes tokens directly with AuthKit, so server restarts / Cloud Run
+  instance recycling never invalidate a connection. Needs only
+  ``WORKOS_AUTHKIT_DOMAIN`` + ``MCP_BASE_URL``.
+- ``"workos"`` -- OAuth via WorkOS AuthKit using the full ``WorkOSProvider``
+  OAuth proxy: FastMCP does DCR for claude.ai and proxies login to AuthKit with
+  a pre-registered client. STATEFUL: client registrations and token mappings
+  live in the instance, so every restart forces re-authentication -- prefer
+  ``authkit`` on ephemeral hosts. Needs ``WORKOS_AUTHKIT_DOMAIN`` +
+  ``WORKOS_CLIENT_ID`` + ``WORKOS_CLIENT_SECRET`` + ``MCP_BASE_URL``; register
+  ``<MCP_BASE_URL>/auth/callback`` in the WorkOS app.
 - ``"oidc"`` -- OAuth via any OIDC provider (Descope, Auth0, Google, or WorkOS
   the manual way) through ``OIDCProxy`` (FastMCP performs DCR itself). Needs
   ``MCP_OIDC_CONFIG_URL`` + ``MCP_OIDC_CLIENT_ID`` (+ secret) + ``MCP_BASE_URL``.
@@ -40,6 +49,8 @@ _BEARER_CLIENT_ID = "lead-finder-session"
 def build_auth(config: Config) -> AuthProvider | None:
     """Return the server's single auth layer, or ``None`` for authless dev."""
     provider = config.mcp_oauth_provider
+    if provider == "authkit":
+        return _authkit(config)
     if provider == "workos":
         return _workos(config)
     if provider == "oidc":
@@ -48,8 +59,8 @@ def build_auth(config: Config) -> AuthProvider | None:
         return _supabase(config)
     if provider:
         raise ValueError(
-            f"Unknown MCP_OAUTH_PROVIDER={provider!r}; "
-            "use 'supabase', 'oidc', or leave empty for bearer/authless.",
+            f"Unknown MCP_OAUTH_PROVIDER={provider!r}; use 'authkit', 'workos', "
+            "'supabase', 'oidc', or leave empty for bearer/authless.",
         )
 
     # No OAuth provider configured: static bearer, or authless.
@@ -86,6 +97,41 @@ def _require(config: Config, *fields: str) -> None:
         raise ValueError(
             f"MCP_OAUTH_PROVIDER={config.mcp_oauth_provider!r} requires: {names}",
         )
+
+
+def _authkit(config: Config) -> AuthProvider:
+    """Stateless OAuth via WorkOS AuthKit (``AuthKitProvider``).
+
+    The server only verifies AuthKit JWTs (JWKS) and serves RFC 9728
+    protected-resource metadata pointing clients at AuthKit. claude.ai performs
+    DCR and token refresh directly against AuthKit, so no OAuth state lives in
+    this process -- connections survive restarts and Cloud Run recycling.
+    Requires DCR enabled in the WorkOS dashboard (Applications -> Configuration).
+    """
+    from fastmcp.server.auth.providers.jwt import JWTVerifier
+    from fastmcp.server.auth.providers.workos import AuthKitProvider
+
+    _require(config, "workos_authkit_domain", "mcp_base_url")
+    logger.info(
+        "Auth: AuthKit stateless resource server (domain=%s, resource=%s)",
+        config.workos_authkit_domain,
+        config.mcp_base_url,
+    )
+    domain = config.workos_authkit_domain.rstrip("/")
+    # Explicit verifier = issuer + signature only, no audience binding. The
+    # default verifier binds aud to the resource URL, which additionally
+    # requires that URL be configured as a Resource Indicator in the WorkOS
+    # dashboard; gmail-mcp-server runs without the aud check and stays
+    # connected, so mirror that proven setup.
+    return AuthKitProvider(
+        authkit_domain=domain,
+        base_url=config.mcp_base_url,
+        token_verifier=JWTVerifier(
+            jwks_uri=f"{domain}/oauth2/jwks",
+            issuer=domain,
+            algorithm="RS256",
+        ),
+    )
 
 
 def _workos(config: Config) -> AuthProvider:
