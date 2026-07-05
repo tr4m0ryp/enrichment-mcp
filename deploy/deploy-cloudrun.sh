@@ -54,13 +54,13 @@ gcloud run deploy "$SERVICE" \
 # Read the bearer for `claude mcp add`:
 #    gcloud secrets versions access latest --secret=MCP_BEARER_TOKEN
 #
-# 6. (Optional) Enable OAuth for the claude.ai WEB connector. These are config,
-#    not secrets, so pass them as env vars and redeploy. Supabase mode reuses the
-#    project's own Auth -- no separate IdP:
+# 6. (Optional) Enable OAuth for the claude.ai WEB connector. Use the STATELESS
+#    authkit mode: the server only verifies AuthKit JWTs; claude.ai registers
+#    (DCR) and refreshes tokens directly with AuthKit, so Cloud Run instance
+#    recycling never forces re-authentication. Enable Dynamic Client
+#    Registration in the WorkOS dashboard first. Config, not secrets:
 #    gcloud run deploy "$SERVICE" --source . --region "$REGION" --allow-unauthenticated --max-instances 1 \
 #      --set-secrets=MCP_BEARER_TOKEN=MCP_BEARER_TOKEN:latest,SUPABASE_DB_URL=SUPABASE_DB_URL:latest,PROSPEO_API_KEYS=PROSPEO_API_KEYS:latest,MYEMAILVERIFIER_API_KEY=MYEMAILVERIFIER_API_KEY:latest \
-#      --set-env-vars=MCP_OAUTH_PROVIDER=supabase,SUPABASE_PROJECT_URL=https://<ref>.supabase.co,MCP_BASE_URL=https://<service-url>
-#    Then in the Supabase dashboard: Auth -> Providers (enable a sign-in method)
-#    and Auth -> URL Configuration (add claude.ai's callback). NOTE: switching to
-#    OAuth means the static bearer (Claude Code) stops being accepted -- the
-#    server now expects Supabase-issued tokens.
+#      --set-env-vars=MCP_OAUTH_PROVIDER=authkit,WORKOS_AUTHKIT_DOMAIN=https://<tenant>.authkit.app,MCP_BASE_URL=https://<service-url>
+#    NOTE: switching to OAuth means the static bearer (Claude Code) stops being
+#    accepted -- the server now expects AuthKit-issued tokens.
