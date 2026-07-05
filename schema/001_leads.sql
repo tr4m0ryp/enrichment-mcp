@@ -36,6 +36,9 @@ CREATE TABLE IF NOT EXISTS leads (
                                        CHECK (status IN (
                                            'qualified', 'contact_resolved',
                                            'contacted', 'replied',
+                                           'agreement_sent', 'signed',
+                                           'authorized_ready', 'running',
+                                           'reported',
                                            'closed', 'rejected')),
     -- One decision-maker contact; all nullable per C8.
     contact_name           TEXT,
