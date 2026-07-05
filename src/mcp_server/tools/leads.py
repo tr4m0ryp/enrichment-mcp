@@ -88,7 +88,8 @@ async def list_leads(
     """List leads, highest ``bounty_fit_score`` first then newest.
 
     Optionally filter by exact ``status`` (one of qualified, contact_resolved,
-    contacted, replied, closed, rejected) and/or a ``min_score`` floor on
+    contacted, replied, agreement_sent, signed, authorized_ready, running,
+    reported, closed, rejected) and/or a ``min_score`` floor on
     ``bounty_fit_score``. ``limit`` caps the number returned (default 50).
     """
     return _rows(
@@ -111,7 +112,8 @@ async def update_lead_status(
     """Move a lead to ``status``; optionally append ``note`` to its rationale.
 
     ``status`` must be one of the enum values (qualified, contact_resolved,
-    contacted, replied, closed, rejected). A supplied ``note`` is appended to
+    contacted, replied, agreement_sent, signed, authorized_ready, running,
+    reported, closed, rejected). A supplied ``note`` is appended to
     the existing ``why`` (separated by `` | ``) as a short audit trail. Errors
     if the domain does not exist or the status is invalid. Returns the row.
     """

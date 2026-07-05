@@ -11,13 +11,22 @@ from __future__ import annotations
 from .pool import get_pool
 
 # Canonical status progression: qualified -> contact_resolved -> contacted ->
-# replied -> closed/rejected. Ordering is used both to validate updates and to
-# avoid regressing an advanced lead during an upsert.
+# replied -> agreement_sent -> signed -> authorized_ready -> running ->
+# reported -> closed/rejected. The five engagement states (agreement_sent
+# .. reported) carry a lead through signature-verification, the shor-run, and
+# reporting. Ordering is used both to validate updates and to avoid regressing
+# an advanced lead during an upsert, so it must stay in sync with the
+# ``leads_status_check`` DB constraint (schema/002_engagement_statuses.sql).
 LEAD_STATUSES: tuple[str, ...] = (
     "qualified",
     "contact_resolved",
     "contacted",
     "replied",
+    "agreement_sent",
+    "signed",
+    "authorized_ready",
+    "running",
+    "reported",
     "closed",
     "rejected",
 )
@@ -47,10 +56,10 @@ _CONTACT_FIELDS: tuple[str, ...] = (
 )
 
 # SQL array literal of the status order, reused in the upsert's no-regress CASE.
-_STATUS_ORDER_SQL = (
-    "ARRAY['qualified','contact_resolved','contacted',"
-    "'replied','closed','rejected']"
-)
+# Derived from LEAD_STATUSES so the two can never drift: a status missing here
+# would make array_position() return NULL and silently regress an advanced lead
+# back to its EXCLUDED (re-add) status.
+_STATUS_ORDER_SQL = "ARRAY[" + ",".join(f"'{s}'" for s in LEAD_STATUSES) + "]"
 
 
 async def add_qualified_lead(lead: dict) -> dict:
