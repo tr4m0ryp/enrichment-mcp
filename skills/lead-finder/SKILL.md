@@ -3,16 +3,26 @@ name: lead-finder
 description: >-
   Depth-first lead finder for a penetration-testing / bug-bounty offering
   (founder Moussa). Use when the operator wants to surface a few high-fit
-  custom-webshop operators -- bespoke, non-platform online stores that would
+  custom-built B2B / high-blast-radius commerce operators -- distributors,
+  wholesalers, B2B webshops, marketplaces, and trade platforms holding
+  valuable/sensitive customer data, that run their own bespoke stack and would
   plausibly welcome a security researcher -- hard-qualify them against the ICP,
   resolve the single best contact for each, and store them as durable leads via
-  the enrichment MCP tools. Discovery and qualification run in-session with
+  the enrichment MCP tools. It deliberately does NOT target low-stakes B2C
+  consumer-hobby shops. Discovery and qualification run in-session with
   web_search / web_fetch; contact resolution and lead state run on the MCP
   server. This skill FINDS, QUALIFIES, and STORES leads only -- it never
   contacts anyone and never runs a security test.
 ---
 
 # Lead Finder -- depth-first (pentest / bug-bounty)
+
+> **Canonical copy:** the operational copy of this skill lives in the
+> `pentest-pipeline` repo at `.claude/skills/lead-finder/` -- that is what the
+> outreach routine actually clones and loads. This copy ships with the MCP
+> server as the reference pairing; keep the two in sync (this file, `references/
+> icp.md`, `references/angles.md`). If they ever diverge, the pentest-pipeline
+> copy governs runtime behavior.
 
 ## Invariant -- read before anything else
 
@@ -30,18 +40,24 @@ planning how to approach a lead, stop -- that is not this skill's job.
 
 ## What this skill produces
 
-A **few** (not many) stored, qualified leads -- each a custom-webshop operator
-that scored `>= 7` on the qualification rubric, carrying a lean record:
-recognize-it fields, one best contact, and a one-line `why`. Depth over volume:
-a handful of strong leads per session beats a long list of weak ones. Discard
-aggressively.
+A **few** (not many) stored, qualified leads -- each a custom-built B2B /
+high-blast-radius commerce operator that scored `>= 7` on the qualification
+rubric, carrying a lean record: recognize-it fields, one best contact, and a
+one-line `why`. Depth over volume: a handful of strong leads per session beats a
+long list of weak ones. Discard aggressively -- especially low-stakes B2C
+consumer-hobby shops, which are out of ICP (criterion 3).
 
 ## Inputs
 
-A **target brief** from the operator -- any of: a niche (e.g. independent
-menswear, specialty coffee gear), a geography, and/or one or more seed
-companies or sites to expand from. If the brief is thin, pick the most specific
-angle you can and proceed; do not stall asking for more.
+A **target brief** from the operator -- any of: a vertical (e.g. electronics
+distribution, industrial/MRO supplies, wholesale trade, B2B food/hospitality
+supply), a geography, and/or one or more seed companies or sites to expand from
+(e.g. `t1distribution.nl`). **Default when the brief is thin or absent:**
+custom-built **B2B / high-blast-radius commerce** operators, **EU-wide**,
+**small-to-mid-market** (real revenue but roughly under ~€50M), **unwatched** (no
+managed bounty, no in-house AppSec) -- never low-stakes B2C consumer-hobby shops.
+Pick the most specific angle you can under that default and proceed; do not stall
+asking for more.
 
 ## Reference files (read these)
 
@@ -66,12 +82,8 @@ angle you can and proceed; do not stall asking for more.
 - `resolve_contact(company_name, domain, person_name, role)`
   -> `{found, email, email_verified, linkedin_url, job_title}`
   or `{found: false, reason}`. Resolves and verifies ONE named decision-maker.
-- `verify_email(email)` -> `{status, valid, confidence, method}`, where `status`
-  is `"valid"` / `"invalid"` / `"catch_all"`. Accept the address **only** when
-  `valid` is `true` (equivalently `status == "valid"`). A **catch-all** domain
-  accepts any address, so it returns `status: "catch_all"`, `valid: false` --
-  treat it, and `"invalid"`, as **unconfirmed**. Never store a `catch_all` result
-  as a verified email.
+- `verify_email(email)` -> `{status, valid}`. Accept **only** a `Valid`
+  result; treat `Catch-all` / `Unknown` / `Invalid` as unconfirmed.
 - `add_qualified_lead(domain, company_name, summary, location,
   webshop_platform, bounty_fit_score, why, contact_name?, contact_role?,
   contact_email?, contact_linkedin?, contact_email_verified?)` -- upserts on
@@ -107,20 +119,28 @@ Then judge it against `references/icp.md`:
 - **Receptive?** No public managed bounty program (HackerOne / Bugcrowd /
   Intigriti / YesWeHack), no in-house security team; bonus for a `security.txt`,
   a past handled incident, or public security talk.
-- **Attack surface?** Customer accounts/auth, custom checkout, payment handling,
-  an API, user content, integrations -- bespoke surface is the point.
-- **Able to pay a bounty?** Mid-market: established product line, real revenue
-  signals, sizeable-but-not-enterprise team.
+- **High breach blast-radius? (criterion 3, gated)** Is this B2B / a distributor
+  / wholesaler / marketplace / trade platform holding valuable or sensitive
+  customer data (corporate accounts, pricing, contracts, PII, payment/integration
+  data)? A low-stakes B2C consumer-hobby shop scores 0 here and is discarded even
+  if its stack is custom. Bespoke attack surface (accounts/auth, custom checkout,
+  API, integrations) is the point AND raises the impact.
+- **Right-sized to pay & stay unwatched?** Established small/mid-market operator
+  with real revenue but roughly under ~€50M, no in-house AppSec -- big enough to
+  pay a bounty, small enough not to be watched. Too small (hobby) or too large
+  (enterprise with AppSec/procurement) both score 0.
 - **Reachable decision-maker?** A named technical owner (founder / CTO / head of
-  engineering) identifiable on the site or LinkedIn.
+  engineering / head of IT) identifiable on the site or LinkedIn.
 Score each criterion and total the `bounty_fit_score` (0-10) per the rubric.
 
 ### 4. Keep only `>= 7`; discard the rest immediately and explicitly
 Apply the keep-gate from `references/icp.md`: total `>= 7`, custom-stack not
-zero, and receptiveness not zero (the two blocklist conditions are hard
-disqualifiers regardless of total). For every candidate you drop, say so in one
-line with the reason (e.g. "discard -- Shopify storefront" / "discard -- runs a
-HackerOne program"). Do not store anything below the gate. Quality over count.
+zero, receptiveness not zero, AND breach blast-radius (criterion 3) not zero (the
+blocklist conditions are hard disqualifiers regardless of total). For every
+candidate you drop, say so in one line with the reason (e.g. "discard -- Shopify
+storefront" / "discard -- runs a HackerOne program" / "discard -- low
+blast-radius B2C hobby retail"). Do not store anything below the gate. Quality
+over count.
 
 ### 5. Resolve the single best contact
 For each kept lead, identify the **one** best decision-maker (name + role) from
@@ -133,11 +153,8 @@ On `found: true`, capture `email`, `email_verified`, `linkedin_url`,
 Mine the site in-session: `web_fetch` `/team`, `/about`, `/contact`, and the
 person's LinkedIn for a name and the email pattern (e.g. `first@`,
 `first.last@`). Construct ONE candidate address from the pattern and call
-`verify_email(email)`. Accept it **only** if `valid` is `true` (`status ==
-"valid"`). A `catch_all` result (`valid: false`) is NOT a confirmation -- the
-domain accepts every address, so a guess would falsely look deliverable; treat
-it, and `"invalid"`, as unconfirmed. If no `valid` address results, store the
-lead anyway with the contact fields left empty and
+`verify_email(email)`. Accept it **only** if `status` is `Valid`. If no `Valid`
+address results, store the lead anyway with the contact fields left empty and
 `contact_email_verified` false -- a qualified company is never discarded just
 because its contact could not be resolved (C8).
 

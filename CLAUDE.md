@@ -12,8 +12,11 @@ task asks for one, it is out of scope.
 
 ## Architecture
 - **Session (the lead-finder skill):** runs 1-3 discovery angles, qualifies
-  against the pentest/bounty ICP, keeps only score >= 7, names the one
-  decision-maker.
+  against the pentest/bounty ICP (custom-built **B2B / high-blast-radius
+  commerce**, EU-wide, small-to-mid-market, unwatched -- NOT low-stakes B2C
+  consumer-hobby shops), keeps only score >= 7, names the one decision-maker.
+  The operational copy of the skill is in the `pentest-pipeline` repo; the copy
+  under `skills/` here is the reference pairing -- keep them in sync.
 - **Server (this repo):** `resolve_contact` (Prospeo enrich-person pool) +
   `verify_email` (MyEmailVerifier fallback) + five CRUD/query tools over the
   `leads` table. Streamable HTTP at `/mcp`, static bearer auth.
