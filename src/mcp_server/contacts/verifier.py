@@ -66,6 +66,14 @@ class MyEmailVerifierClient:
         self._api_key = api_key
         self._domain_last_check: dict[str, float] = {}
 
+    @property
+    def enabled(self) -> bool:
+        # Always True: construction itself requires a non-empty api_key.
+        # Exists so this client satisfies the same duck-typed interface as
+        # the other verifier tiers (QuickEmailVerificationClient, which can
+        # go disabled when its whole key pool is exhausted/dead).
+        return True
+
     async def verify(self, email: str) -> VerifyResult:
         """Verify a single email; returns VerifyResult."""
         if not email or "@" not in email:
