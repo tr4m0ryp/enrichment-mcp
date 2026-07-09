@@ -75,6 +75,15 @@ async def add_qualified_lead(lead: dict) -> dict:
     a lead with any contact field seeds at ``contact_resolved``, otherwise
     ``qualified``. Re-adding never blanks existing data nor regresses an
     already-advanced status. Returns the stored row.
+
+    Also accepts the contactform-nudge cache (``contactform_checked``,
+    ``contactform_status``, ``contactform_url``, ``contactform_ts``) and the
+    whatsapp-nudge cache (``whatsapp_checked``, ``whatsapp_number``,
+    ``whatsapp_nudge_sent``, ``whatsapp_nudge_ts``). ``contactform_checked`` /
+    ``whatsapp_nudge_sent`` are permanent skip-forever gates -- only pass them
+    true on a genuinely terminal outcome (a real submit/send, or a permanent
+    no-form/CAPTCHA/no-number skip), never on a transient connector error,
+    which must stay retry-eligible on a later sweep.
     """
     return _row(await _add_lead(lead))  # type: ignore[return-value]
 

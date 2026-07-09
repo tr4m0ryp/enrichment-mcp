@@ -1,7 +1,7 @@
 """Prospeo person enrichment with a multi-key pool.
 
 Prospeo's free tier grants ~75-100 enrichments per account per month, so
-we scale by configuring multiple API keys -- the pool (``prospeo_pool``)
+we scale by configuring multiple API keys -- the shared ``key_pool.KeyPool``
 rotates round-robin across keys, parking any key hit by 429 /
 INSUFFICIENT_CREDITS errors for an hour and permanently disabling keys
 that report INVALID_API_KEY.
@@ -25,7 +25,7 @@ from dataclasses import dataclass
 import aiohttp
 import asyncpg
 
-from .prospeo_pool import KeyPool, redact
+from .key_pool import KeyPool, redact
 
 logger = logging.getLogger(__name__)
 

@@ -32,8 +32,14 @@ class Config:
     prospeo_api_keys: list[str] = field(default_factory=list)
     prospeo_enrich_mobile: bool = False
 
-    # MyEmailVerifier key for the in-session guess+verify fallback path
-    # (the verify_email tool); the paid key stays server-side.
+    # QuickEmailVerification key pool -- primary tier of the guess+verify
+    # fallback (the verify_email tool). Comma-separated free-tier keys, 100
+    # verifications/day each; pools the same way PROSPEO_API_KEYS does.
+    quickemailverification_api_keys: list[str] = field(default_factory=list)
+
+    # MyEmailVerifier key -- secondary/fallback tier of the guess+verify
+    # path, used only when QuickEmailVerification is unconfigured or its
+    # whole pool is exhausted; the paid key stays server-side.
     myemailverifier_api_key: str = ""
 
     # MCP transport: the static bearer the server enforces on every request,
@@ -74,6 +80,13 @@ def _load_config() -> Config:
         prospeo_enrich_mobile=os.environ.get(
             "PROSPEO_ENRICH_MOBILE", "false",
         ).strip().lower() == "true",
+        quickemailverification_api_keys=[
+            k.strip()
+            for k in os.environ.get(
+                "QUICKEMAILVERIFICATION_API_KEYS", "",
+            ).split(",")
+            if k.strip()
+        ],
         myemailverifier_api_key=os.environ.get(
             "MYEMAILVERIFIER_API_KEY", "",
         ).strip(),

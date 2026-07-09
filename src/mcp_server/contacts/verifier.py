@@ -32,6 +32,14 @@ RATE_LIMIT_INTERVAL = 1.0  # seconds between checks per domain
 _STATUS_VALID = "valid"
 
 
+class MyEmailVerifierAPIError(Exception):
+    """Provider returned its error envelope (``{"status": "error", ...}`` --
+    bad key, exhausted quota, etc) instead of a verdict. Kept distinct from a
+    real "invalid" result so a broken/exhausted API is never mistaken for a
+    confirmed-bad mailbox.
+    """
+
+
 @dataclass
 class VerifyResult:
     """Result of an email verification check."""
@@ -70,6 +78,8 @@ class MyEmailVerifierClient:
 
         try:
             payload = await self._call(email)
+        except MyEmailVerifierAPIError:
+            raise
         except aiohttp.ClientError as exc:
             logger.warning(
                 "MyEmailVerifier transport error for %s: %s", email, exc,
@@ -105,10 +115,10 @@ class MyEmailVerifierClient:
         timeout = aiohttp.ClientTimeout(total=HTTP_TIMEOUT_SECONDS)
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.get(ENDPOINT, params=params) as resp:
-                # Provider returns HTTP 200 even on quota / auth errors,
-                # with the failure reason in the JSON body. Parse any
-                # non-2xx into a payload too so _parse_response can
-                # log + return invalid/low.
+                # Provider returns HTTP 200 even on quota / auth errors, with
+                # the failure reason in the JSON body as {"status": "error",
+                # "error": ..., "message": ...} -- note lowercase "status",
+                # distinct from the verdict payload's capitalized "Status".
                 try:
                     body = await resp.json(content_type=None)
                 except Exception:
@@ -117,6 +127,11 @@ class MyEmailVerifierClient:
                     logger.warning(
                         "MyEmailVerifier HTTP %s for %s: %s",
                         resp.status, email, str(body)[:200],
+                    )
+                if isinstance(body, dict) and body.get("status") == "error":
+                    raise MyEmailVerifierAPIError(
+                        body.get("message") or body.get("error")
+                        or "unknown provider error"
                     )
                 return body if isinstance(body, dict) else {}
 
