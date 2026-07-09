@@ -23,7 +23,7 @@ from datetime import timedelta
 import aiohttp
 
 from .key_pool import KeyPool, redact, seconds_until_next_utc_midnight
-from .verifier import VerifyResult
+from .verifier import VerifyResult, _truthy
 
 logger = logging.getLogger(__name__)
 
@@ -109,8 +109,10 @@ class QuickEmailVerificationClient:
                     state.api_key, cooldown=_RATE_LIMIT_COOLDOWN,
                 )
                 continue
-            if status == 200 and isinstance(body, dict) and body.get(
-                "success", True,
+            if (
+                status == 200
+                and isinstance(body, dict)
+                and _truthy(body.get("success", "true"))
             ):
                 return _parse_response(email, body)
 
@@ -139,10 +141,13 @@ def _parse_response(email: str, body: dict) -> VerifyResult:
     """Map QuickEmailVerification's response into the shared VerifyResult
     shape used across every verifier tier.
     """
+    # QuickEmailVerification returns booleans as the STRINGS "true"/"false",
+    # so a plain bool() would read "false" as truthy -- use the shared
+    # string-aware truthiness check (same convention as MyEmailVerifier).
     result = (body.get("result") or "").strip().lower()
-    accept_all = bool(body.get("accept_all"))
-    disposable = bool(body.get("disposable"))
-    role = bool(body.get("role"))
+    accept_all = _truthy(body.get("accept_all"))
+    disposable = _truthy(body.get("disposable"))
+    role = _truthy(body.get("role"))
 
     if result == "valid":
         if accept_all:
