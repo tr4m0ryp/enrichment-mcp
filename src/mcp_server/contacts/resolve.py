@@ -24,7 +24,10 @@ from dataclasses import dataclass
 
 from .helpers import extract_domain, split_name
 from .prospeo import ProspeoFinder
-from .verifier import MyEmailVerifierClient
+from .verifier import MyEmailVerifierAPIError, MyEmailVerifierClient
+from .verify_chain import ChainedEmailVerifier, NoVerifierAvailableError
+
+_Verifier = MyEmailVerifierClient | ChainedEmailVerifier
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +58,7 @@ async def resolve_contact(
     role: str = "",
     *,
     prospeo: ProspeoFinder,
-    verifier: MyEmailVerifierClient | None = None,
+    verifier: _Verifier | None = None,
     enrich_mobile: bool = False,
 ) -> ContactResult:
     """Resolve one known person to a verified contact via Prospeo.
@@ -132,7 +135,7 @@ async def resolve_contact(
 
 
 async def _verify(
-    email: str, verifier: MyEmailVerifierClient | None,
+    email: str, verifier: _Verifier | None,
 ) -> bool:
     """Run the verifier; swallow exceptions so one bad call never crashes
     a resolution. Returns False when no verifier is configured.
@@ -141,6 +144,15 @@ async def _verify(
         return False
     try:
         result = await verifier.verify(email)
+    except (MyEmailVerifierAPIError, NoVerifierAvailableError) as exc:
+        # Provider-side failure (bad key, exhausted quota/pool), not a
+        # verdict on this mailbox -- log distinctly and fall back to
+        # unverified rather than ever reporting a false "invalid".
+        logger.warning(
+            "resolve_contact: email verifier unavailable for %s: %s",
+            email, exc,
+        )
+        return False
     except Exception:
         logger.exception("resolve_contact: verify call raised for %s", email)
         return False

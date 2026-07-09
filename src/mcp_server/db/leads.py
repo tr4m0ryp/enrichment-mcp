@@ -46,6 +46,18 @@ _LEAD_COLUMNS: tuple[str, ...] = (
     "contact_email",
     "contact_linkedin",
     "contact_email_verified",
+    # contactform-nudge cache (schema/003_nudge_channels.sql). contactform_checked
+    # is the permanent skip-forever gate -- callers must only pass it true on a
+    # genuinely terminal outcome, never on a transient connector error.
+    "contactform_checked",
+    "contactform_status",
+    "contactform_url",
+    "contactform_ts",
+    # whatsapp-nudge cache (schema/003_nudge_channels.sql).
+    "whatsapp_checked",
+    "whatsapp_number",
+    "whatsapp_nudge_sent",
+    "whatsapp_nudge_ts",
 )
 
 _CONTACT_FIELDS: tuple[str, ...] = (
