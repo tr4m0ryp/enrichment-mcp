@@ -134,7 +134,17 @@ The `skills/lead-finder/` skill drives the depth-first workflow end-to-end. In a
 | `resolve_contact` | Run the Prospeo `enrich-person` pool for a Claude-named person; returns one verified contact or `found:false`. Write-free. |
 | `verify_email` | Verify a guessed address via MyEmailVerifier; the fallback accepts only `Valid`. |
 
-Status flow: `qualified --> contact_resolved --> contacted --> replied --> closed / rejected`.
+Status flow: `qualified --> contact_resolved --> contacted --> replied --> agreement_sent
+--> signed --> authorized_ready --> running --> reported --> closed / rejected`.
+
+**Project partition.** The `leads` table is shared by more than one outreach
+pipeline (pentest / bug-bounty and the Avelero licensing pipeline). Every row
+carries a `project` tag (`pentest` | `avelero`) and every lead-store tool is scoped
+to it: reads filter by it, writes stamp it, and a domain owned by one project can't
+be taken by the other. The scope is the `LEADS_PROJECT` env default (`pentest`),
+overridable per call via the tools' `project` argument. `list_leads` /
+`get_uncontacted` return a COMPACT projection (scan fields + a truncated summary) so
+large lists stay under the MCP output cap; `get_lead` returns the full row.
 
 ## Technical Details
 
