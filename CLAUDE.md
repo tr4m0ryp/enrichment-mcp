@@ -22,6 +22,16 @@ task asks for one, it is out of scope.
   `leads` table. Streamable HTTP at `/mcp`, static bearer auth.
 - Seven tools total: `add_qualified_lead`, `list_leads`, `get_lead`,
   `update_lead_status`, `get_uncontacted`, `resolve_contact`, `verify_email`.
+- **Project partition (shared store).** The `leads` table is shared by more than
+  one outreach pipeline (pentest / bug-bounty and the Avelero licensing pipeline).
+  Every row has a `project` tag (`pentest` | `avelero`); the five lead-store tools
+  are scoped to it -- reads filter by it, writes stamp it, a domain owned by one
+  project can't be taken by the other. Scope = the `LEADS_PROJECT` env default
+  (`pentest`), overridable per call via the `project` argument. Run one instance
+  per project (each with its own `LEADS_PROJECT`), OR share one instance and pass
+  `project` per call. `list_leads` / `get_uncontacted` return a COMPACT projection
+  (scan fields + truncated summary) to stay under the MCP output cap; `get_lead`
+  is the full row. Schema: `schema/004_project_partition.sql`.
 
 ## Layout
 `src/mcp_server/`: `config.py` (dataclass + dotenv), `db/` (asyncpg pool + lead
