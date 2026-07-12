@@ -2,6 +2,7 @@
 
 from .leads import (
     LEAD_STATUSES,
+    VALID_PROJECTS,
     add_qualified_lead,
     get_lead,
     get_uncontacted,
@@ -15,6 +16,7 @@ __all__ = [
     "close_pool",
     "get_pool",
     "LEAD_STATUSES",
+    "VALID_PROJECTS",
     "add_qualified_lead",
     "get_lead",
     "get_uncontacted",
