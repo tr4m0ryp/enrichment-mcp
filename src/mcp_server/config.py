@@ -48,6 +48,14 @@ class Config:
     mcp_host: str = "0.0.0.0"
     mcp_port: int = 8000
 
+    # Lead partition this instance serves. The `leads` table is shared by more
+    # than one outreach pipeline (pentest / bug-bounty and the Avelero licensing
+    # pipeline); `project` tags every row so the two never commingle. This is the
+    # instance-wide DEFAULT applied when a tool call omits `project`; a call may
+    # still override it per-request. Default 'pentest' keeps the existing
+    # single-instance behaviour unchanged.
+    leads_project: str = "pentest"
+
     # Auth mode (T6). Empty -> static-bearer (Claude Code) or authless.
     # "supabase" -> OAuth via the project's own Supabase Auth (claude.ai web,
     # no separate IdP). "oidc" -> any OIDC provider (WorkOS / Descope / Auth0).
