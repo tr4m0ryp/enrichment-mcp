@@ -65,8 +65,12 @@ python3 -m venv .venv
 cp .env.example .env
 # Edit .env and fill in the values (see the table below)
 
-# 3. Apply the database schema (SUPABASE_DB_URL must be set)
+# 3. Apply the database schema (SUPABASE_DB_URL must be set) -- run EVERY numbered
+#    file in order; each is idempotent, so re-running is safe.
 psql "$SUPABASE_DB_URL" -f schema/001_leads.sql
+psql "$SUPABASE_DB_URL" -f schema/002_engagement_statuses.sql
+psql "$SUPABASE_DB_URL" -f schema/003_nudge_channels.sql
+psql "$SUPABASE_DB_URL" -f schema/004_project_partition.sql
 
 # 4. Run the server
 .venv/bin/python -m src.mcp_server
