@@ -4,7 +4,14 @@ Each wrapper just calls a Task-003 data-access function and normalises the
 asyncpg row(s) into JSON-friendly ``dict``s (timestamps -> ISO strings). The
 docstrings below become the tool descriptions the session sees, so they state
 exactly what the tool does and returns. ``ValueError``s raised by the store
-(missing domain, bad status, unknown lead) are surfaced as proper tool errors.
+(missing domain, bad status, unknown lead, cross-project collision) are surfaced
+as proper tool errors.
+
+**Project scoping.** The ``leads`` table is shared by more than one pipeline, so
+every tool takes an optional ``project`` (``"pentest"`` or ``"avelero"``). When
+omitted it defaults to this instance's ``LEADS_PROJECT`` env (``"pentest"``), so
+the pentest pipeline needs no change; the Avelero pipeline passes
+``project="avelero"`` so its leads never commingle with pentest leads.
 """
 
 from __future__ import annotations
@@ -16,6 +23,7 @@ from typing import Any, Awaitable, Callable
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 
+from ..config import get_config
 from ..db import (
     add_qualified_lead as _add_lead,
     get_lead as _get_lead,
@@ -23,6 +31,11 @@ from ..db import (
     list_leads as _list_leads,
     update_lead_status as _update_lead_status,
 )
+
+
+def _project(project: str | None) -> str:
+    """Resolve the effective project: explicit arg, else the instance default."""
+    return project or get_config().leads_project
 
 
 def _jsonable(value: Any) -> Any:
@@ -64,7 +77,7 @@ def _surface_value_errors(
 
 
 @_surface_value_errors
-async def add_qualified_lead(lead: dict) -> dict:
+async def add_qualified_lead(lead: dict, project: str | None = None) -> dict:
     """Insert or update one qualified lead, keyed on its ``domain`` (upsert).
 
     ``lead`` carries the lean record: required ``domain`` and ``company_name``,
@@ -76,6 +89,10 @@ async def add_qualified_lead(lead: dict) -> dict:
     ``qualified``. Re-adding never blanks existing data nor regresses an
     already-advanced status. Returns the stored row.
 
+    ``project`` (``"pentest"``/``"avelero"``, default this instance's) tags the
+    row. A domain already owned by a DIFFERENT project is never overwritten --
+    the call errors instead, so the two pipelines' leads stay separate.
+
     Also accepts the contactform-nudge cache (``contactform_checked``,
     ``contactform_status``, ``contactform_url``, ``contactform_ts``) and the
     whatsapp-nudge cache (``whatsapp_checked``, ``whatsapp_number``,
@@ -85,31 +102,45 @@ async def add_qualified_lead(lead: dict) -> dict:
     no-form/CAPTCHA/no-number skip), never on a transient connector error,
     which must stay retry-eligible on a later sweep.
     """
-    return _row(await _add_lead(lead))  # type: ignore[return-value]
+    return _row(await _add_lead(lead, _project(project)))  # type: ignore[return-value]
 
 
 @_surface_value_errors
 async def list_leads(
+    project: str | None = None,
     status: str | None = None,
     min_score: int | None = None,
-    limit: int = 50,
+    limit: int = 25,
+    offset: int = 0,
 ) -> list[dict]:
-    """List leads, highest ``bounty_fit_score`` first then newest.
+    """List leads (compact rows), highest ``bounty_fit_score`` first then newest.
 
-    Optionally filter by exact ``status`` (one of qualified, contact_resolved,
-    contacted, replied, agreement_sent, signed, authorized_ready, running,
-    reported, closed, rejected) and/or a ``min_score`` floor on
-    ``bounty_fit_score``. ``limit`` caps the number returned (default 50).
+    Scoped to ``project`` (default this instance's). Optionally filter by exact
+    ``status`` (one of qualified, contact_resolved, contacted, replied,
+    agreement_sent, signed, authorized_ready, running, reported, closed,
+    rejected) and/or a ``min_score`` floor on ``bounty_fit_score``. ``limit``
+    caps the page (default 25) and ``offset`` paginates.
+
+    Returns a COMPACT projection per lead (domain, company_name, status,
+    bounty_fit_score, location, contact_name, contact_email,
+    contact_email_verified, a truncated summary, timestamps) so a large list
+    stays under the output limit. Use ``get_lead`` for a single lead's full row.
     """
     return _rows(
-        await _list_leads(status=status, min_score=min_score, limit=limit)
+        await _list_leads(
+            project=_project(project),
+            status=status,
+            min_score=min_score,
+            limit=limit,
+            offset=offset,
+        )
     )
 
 
 @_surface_value_errors
-async def get_lead(domain: str) -> dict | None:
-    """Fetch one lead by its ``domain``; returns the row or ``null`` if absent."""
-    return _row(await _get_lead(domain))
+async def get_lead(domain: str, project: str | None = None) -> dict | None:
+    """Fetch one lead (full row) by ``domain`` within ``project``; ``null`` if absent."""
+    return _row(await _get_lead(domain, _project(project)))
 
 
 @_surface_value_errors
@@ -117,26 +148,31 @@ async def update_lead_status(
     domain: str,
     status: str,
     note: str | None = None,
+    project: str | None = None,
 ) -> dict:
-    """Move a lead to ``status``; optionally append ``note`` to its rationale.
+    """Move a lead to ``status`` within ``project``; optionally append ``note``.
 
     ``status`` must be one of the enum values (qualified, contact_resolved,
     contacted, replied, agreement_sent, signed, authorized_ready, running,
-    reported, closed, rejected). A supplied ``note`` is appended to
-    the existing ``why`` (separated by `` | ``) as a short audit trail. Errors
-    if the domain does not exist or the status is invalid. Returns the row.
+    reported, closed, rejected). A supplied ``note`` is appended to the existing
+    ``why`` (separated by `` | ``) as a short audit trail. Errors if no lead with
+    that domain exists in this project, or the status is invalid. Returns the row.
     """
-    return _row(await _update_lead_status(domain, status, note))  # type: ignore[return-value]
+    return _row(  # type: ignore[return-value]
+        await _update_lead_status(domain, status, note, _project(project))
+    )
 
 
 @_surface_value_errors
-async def get_uncontacted(limit: int = 20) -> list[dict]:
-    """List leads not yet contacted (status ``qualified``/``contact_resolved``).
+async def get_uncontacted(project: str | None = None, limit: int = 20) -> list[dict]:
+    """List leads (compact rows) not yet contacted (``qualified``/``contact_resolved``).
 
-    Highest ``bounty_fit_score`` first then newest -- the work queue the session
-    pulls from to drive contact resolution. ``limit`` caps the count (default 20).
+    Scoped to ``project`` (default this instance's). Highest ``bounty_fit_score``
+    first then newest -- the work queue the session pulls from to drive contact
+    resolution. ``limit`` caps the count (default 20). Returns the same compact
+    projection as ``list_leads``.
     """
-    return _rows(await _get_uncontacted(limit))
+    return _rows(await _get_uncontacted(_project(project), limit))
 
 
 def register_lead_tools(mcp: FastMCP) -> None:
