@@ -99,6 +99,7 @@ def _load_config() -> Config:
             "MYEMAILVERIFIER_API_KEY", "",
         ).strip(),
         mcp_bearer_token=os.environ.get("MCP_BEARER_TOKEN", "").strip(),
+        leads_project=(os.environ.get("LEADS_PROJECT", "").strip() or "pentest"),
         mcp_host=os.environ.get("MCP_HOST", "0.0.0.0").strip(),
         # Cloud Run (and most PaaS) inject the listen port as PORT; honor it
         # first so the container binds correctly, then MCP_PORT, then default.
