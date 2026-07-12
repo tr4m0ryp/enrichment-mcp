@@ -55,6 +55,14 @@ gcloud run deploy "$SERVICE" \
 #    psql "<SUPABASE_DB_URL>" -f schema/001_leads.sql
 #    psql "<SUPABASE_DB_URL>" -f schema/002_engagement_statuses.sql
 #    psql "<SUPABASE_DB_URL>" -f schema/003_nudge_channels.sql
+#    psql "<SUPABASE_DB_URL>" -f schema/004_project_partition.sql
+#
+# Per-project instances: set LEADS_PROJECT to scope an instance's default lead
+# partition. Deploy the pentest instance with LEADS_PROJECT=pentest (default) and,
+# if you want hard isolation instead of the per-call `project` arg, a second
+# service with LEADS_PROJECT=avelero (same DB, its own bearer + connector):
+#    gcloud run deploy enrichment-mcp --source . --region "$REGION" \
+#      --update-env-vars LEADS_PROJECT=pentest   # (avelero: a separate service)
 #
 # Read the bearer for `claude mcp add`:
 #    gcloud secrets versions access latest --secret=MCP_BEARER_TOKEN
