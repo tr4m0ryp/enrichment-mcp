@@ -56,6 +56,8 @@ python -m src.mcp_server        # serves HTTP on MCP_HOST:MCP_PORT at /mcp
 - `PROSPEO_ENRICH_MOBILE` -- pull mobile numbers (10x credits); default false
 - `MYEMAILVERIFIER_API_KEY` -- verifier key for the fallback path
 - `MCP_BEARER_TOKEN` -- static bearer the server enforces
+- `LEADS_PROJECT` -- lead partition this instance serves (`pentest` | `avelero`);
+  default `pentest`. Sets the default `project` for every lead-store tool call.
 - `MCP_HOST` / `MCP_PORT` -- bind address; default `0.0.0.0:8000`
 
 ## Reference
