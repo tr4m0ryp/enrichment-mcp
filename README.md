@@ -121,11 +121,11 @@ The `skills/lead-finder/` skill drives the depth-first workflow end-to-end. In a
 
 | Tool | Purpose |
 |---|---|
-| `add_qualified_lead` | Upsert a qualified lead; `domain` is the primary key. Status never regresses on re-upsert. |
-| `list_leads` | List leads, optionally filtered by `status` / `min_score`. |
-| `get_lead` | Fetch one lead by domain. |
-| `update_lead_status` | Advance the status enum for a domain (validated). |
-| `get_uncontacted` | Leads at `qualified` or `contact_resolved` -- the cross-session backlog. |
+| `add_qualified_lead` | Upsert a qualified lead within a `project`; `domain` is the key. Status never regresses; a domain owned by another project can't be taken. |
+| `list_leads` | List leads (COMPACT rows) for a `project`, optionally filtered by `status` / `min_score`, paginated via `offset`. |
+| `get_lead` | Fetch one lead (full row) by domain within a `project`. |
+| `update_lead_status` | Advance the status enum for a domain within a `project` (validated). |
+| `get_uncontacted` | Leads (compact) at `qualified` or `contact_resolved` in a `project` -- the cross-session backlog. |
 
 **Contact resolution (server-side network)**
 
