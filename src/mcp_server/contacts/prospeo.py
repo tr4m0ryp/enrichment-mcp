@@ -257,11 +257,12 @@ class ProspeoFinder:
             or ""
         ).strip()
         job_title = (person.get("current_job_title") or "").strip()
-        return ProspeoResult(
+        return EnrichmentResult(
             email=email,
             email_verified=email_verified,
             linkedin_url=linkedin_url,
             phone=phone,
             job_title=job_title,
+            provider=PROVIDER,
             raw=body,
         )
