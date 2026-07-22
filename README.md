@@ -75,6 +75,7 @@ psql "$SUPABASE_DB_URL" -f schema/001_leads.sql
 psql "$SUPABASE_DB_URL" -f schema/002_engagement_statuses.sql
 psql "$SUPABASE_DB_URL" -f schema/003_nudge_channels.sql
 psql "$SUPABASE_DB_URL" -f schema/004_project_partition.sql
+psql "$SUPABASE_DB_URL" -f schema/005_provider_column.sql
 
 # 4. Run the server
 .venv/bin/python -m src.mcp_server
