@@ -46,9 +46,14 @@ task asks for one, it is out of scope.
 
 ## Layout
 `src/mcp_server/`: `config.py` (dataclass + dotenv), `db/` (asyncpg pool + lead
-store), `contacts/` (Prospeo + verifier), `tools/` (@mcp.tool wrappers),
+store), `contacts/` (`finder.py` = shared result/protocol/chain, `prospeo.py`,
+`apollo.py`, verifier + verify_chain), `tools/` (@mcp.tool wrappers),
 `server.py` (FastMCP app). Each file < 300 lines, re-exported from its package
-root.
+root. `tests/` holds runnable modules, not pytest:
+`python -m tests.test_finder_chain` (failover rules),
+`tests.test_apollo_parse` (parser vs a real Apollo response fixture),
+`tests.test_server_smoke` (tool registry + config), and
+`APOLLO_API_KEYS=... python -m tests.test_apollo_live` (live plan probe).
 
 ## Stack
 Python 3.10+, `fastmcp` (>=3.4,<4), `asyncpg`, `aiohttp`, `python-dotenv`.
