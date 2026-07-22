@@ -132,7 +132,9 @@ class ProspeoFinder:
                     "ProspeoFinder: all keys exhausted/dead for %s %s @ %s",
                     first_name, last_name, domain,
                 )
-                return None
+                raise ProviderUnavailableError(
+                    "prospeo: all keys exhausted or dead"
+                )
             try:
                 status, body_resp = await self._call_one(state.api_key, body)
             except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
