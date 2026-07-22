@@ -1,10 +1,15 @@
-"""Prospeo person enrichment with a multi-key pool.
+"""Prospeo person enrichment with a multi-key pool -- the primary tier.
 
 Prospeo's free tier grants ~75-100 enrichments per account per month, so
 we scale by configuring multiple API keys -- the shared ``key_pool.KeyPool``
 rotates round-robin across keys, parking any key hit by 429 /
 INSUFFICIENT_CREDITS errors for an hour and permanently disabling keys
 that report INVALID_API_KEY.
+
+When the whole pool is spent, ``find`` raises ``ProviderUnavailableError``
+rather than returning ``None``: exhaustion is not evidence that the person
+does not exist, and conflating the two would let a quota wall masquerade as
+a miss. ``ChainedFinder`` catches it and fails over to Apollo.
 
 Cost model:
   - Default call (``enrich_mobile=False``): 1 credit per match. Returns
@@ -20,39 +25,26 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass
 
 import aiohttp
 import asyncpg
 
+from .finder import EnrichmentResult, ProviderUnavailableError, log_usage
 from .key_pool import KeyPool, redact
 
 logger = logging.getLogger(__name__)
 
 PROSPEO_ENRICH_URL = "https://api.prospeo.io/enrich-person"
 TIMEOUT_SECONDS = 30.0
+PROVIDER = "prospeo"
 # Per Prospeo docs: 1 credit/match, 10 credits/match when mobile
 # revealed, 0 for "free_enrichment" (lifetime account dedup).
 _CREDITS_EMAIL_ONLY = 1
 _CREDITS_WITH_MOBILE = 10
 
-
-@dataclass
-class ProspeoResult:
-    """Fields the caller persists from a successful enrichment.
-
-    ``raw`` is the full response body so downstream code can mine
-    additional fields (company data, job history, location) without
-    re-running the call -- per Prospeo's docs, repeating the same
-    enrichment is free for the lifetime of an account.
-    """
-
-    email: str = ""
-    email_verified: bool = False
-    linkedin_url: str = ""
-    phone: str = ""
-    job_title: str = ""
-    raw: dict | None = None
+# Retained for import compatibility: the result shape is now provider-neutral
+# and shared with Apollo, but callers still refer to it by the old name.
+ProspeoResult = EnrichmentResult
 
 
 class ProspeoFinder:
