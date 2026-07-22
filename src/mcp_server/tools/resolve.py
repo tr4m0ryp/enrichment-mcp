@@ -1,10 +1,15 @@
 """The two contact-resolution tools (T3, T8): ``resolve_contact`` + ``verify_email``.
 
-Both share one Prospeo enrich-person finder and one chained email verifier
-(QuickEmailVerification's key pool first, MyEmailVerifier second), built
+Both share one enrichment finder chain and one chained email verifier, built
 lazily on first call from ``get_config()`` -- so importing the server (or
-building the app) never opens a DB connection or HTTP session. The asyncpg pool
-is handed to the finder as its ``usage_pool`` so Prospeo credit burn is metered
+building the app) never opens a DB connection or HTTP session.
+
+The finder chain is Prospeo's free-tier key pool first, Apollo second: when
+Prospeo runs out of credits, loses its keys, or (by default) simply has no
+record of the person, the chain fails over to Apollo rather than reporting a
+miss. Both tiers are optional -- with only Prospeo configured the chain
+behaves exactly as the single-provider server did. The asyncpg pool is handed
+to each finder as its ``usage_pool`` so per-provider credit burn is metered
 (T4). ``resolve_contact`` is deliberately write-free (T3): it enriches the one
 person the session already named and returns the result, but never persists a
 lead -- compose it with ``add_qualified_lead`` to store the contact.
@@ -19,7 +24,9 @@ from fastmcp.exceptions import ToolError
 
 from ..config import get_config
 from ..contacts import (
+    ApolloFinder,
     ChainedEmailVerifier,
+    ChainedFinder,
     MyEmailVerifierClient,
     NoVerifierAvailableError,
     ProspeoFinder,
@@ -30,24 +37,42 @@ from ..db import get_pool
 
 logger = logging.getLogger(__name__)
 
-# Shared, lazily-built dependencies (one finder + one verifier chain per process).
-_finder: ProspeoFinder | None = None
+# Shared, lazily-built dependencies (one finder chain + one verifier chain per
+# process).
+_finder: ChainedFinder | None = None
 _verifier: ChainedEmailVerifier | None = None
 _deps_built = False
 
 
-async def _deps() -> tuple[ProspeoFinder, ChainedEmailVerifier | None]:
-    """Build (once) and return the shared Prospeo finder + verifier chain.
+async def _deps() -> tuple[ChainedFinder, ChainedEmailVerifier | None]:
+    """Build (once) and return the shared finder chain + verifier chain.
 
-    Opens the asyncpg pool on first use and passes it to the finder for usage
-    metering. The chain tries QuickEmailVerification's key pool first, then
-    MyEmailVerifier; the whole chain is ``None`` when neither is configured.
+    Opens the asyncpg pool on first use and passes it to each finder for usage
+    metering. Enrichment tiers are added in priority order and only when
+    configured: Prospeo, then Apollo. The verifier chain tries
+    QuickEmailVerification's key pool first, then MyEmailVerifier; it is
+    ``None`` when neither is configured.
     """
     global _finder, _verifier, _deps_built
     if not _deps_built:
         cfg = get_config()
         pool = await get_pool()
-        _finder = ProspeoFinder(cfg.prospeo_api_keys, usage_pool=pool)
+
+        finders = []
+        if cfg.prospeo_api_keys:
+            finders.append(ProspeoFinder(cfg.prospeo_api_keys, usage_pool=pool))
+        if cfg.apollo_api_keys:
+            finders.append(ApolloFinder(cfg.apollo_api_keys, usage_pool=pool))
+        _finder = ChainedFinder(
+            finders,
+            fallback_on_no_match=cfg.contact_fallback_on_no_match,
+        )
+        logger.info(
+            "resolve tools: enrichment chain = [%s] (fallback_on_no_match=%s)",
+            ", ".join(type(f).__name__ for f in finders) or "none",
+            cfg.contact_fallback_on_no_match,
+        )
+
         tiers = []
         if cfg.quickemailverification_api_keys:
             tiers.append(
