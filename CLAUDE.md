@@ -2,8 +2,8 @@
 
 Depth-first lead finder for a pentest / bug-bounty offering. A Claude session
 drives discovery and hard qualification with its own web tools; this repo is a
-small **FastMCP server** that owns Prospeo contact resolution and a durable
-`leads` store in Supabase Postgres.
+small **FastMCP server** that owns contact resolution (Prospeo primary, Apollo
+failover) and a durable `leads` store in Supabase Postgres.
 
 ## Invariant (do not break)
 The system **finds, qualifies, and tracks only**. It never contacts a lead and
