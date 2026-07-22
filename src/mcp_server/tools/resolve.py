@@ -94,15 +94,22 @@ async def resolve_contact(
 ) -> dict:
     """Resolve one already-identified decision-maker to a verified email.
 
-    Enriches the single person the session named during qualification, via the
-    Prospeo enrich-person pool, and confirms the email (Prospeo's own check or
-    the QuickEmailVerification/MyEmailVerifier fallback chain). This does NOT
+    Enriches the single person the session named during qualification through
+    the enrichment chain (Prospeo first, Apollo on quota exhaustion or miss),
+    and confirms the email (the provider's own check, or the
+    QuickEmailVerification/MyEmailVerifier fallback chain). This does NOT
     create or update a lead --
     it is idempotent and composable; call ``add_qualified_lead`` yourself to
     store the contact. On a hit returns ``{found, email, email_verified,
-    linkedin_url, job_title, source}``; otherwise ``{found: false, reason}``
-    where ``reason`` is one of no_match / no_email / email_unverified /
-    insufficient_input / prospeo_unavailable.
+    linkedin_url, job_title, source}``, where ``source`` names the provider
+    that resolved it (``prospeo`` / ``apollo``, suffixed ``+verifier`` when
+    the address needed external confirmation). Otherwise ``{found: false,
+    reason}`` where ``reason`` is one of no_match / no_email /
+    email_unverified / insufficient_input / provider_unavailable. Treat those
+    last two differently: ``no_match`` means a provider genuinely has no such
+    person (proceed to guess+verify), while ``provider_unavailable`` means
+    every provider was out of quota or unreachable, so nothing was learned
+    about the person and the run needs more credits.
     """
     finder, verifier = await _deps()
     cfg = get_config()
@@ -111,7 +118,7 @@ async def resolve_contact(
         domain,
         person_name,
         role or "",
-        prospeo=finder,
+        finder=finder,
         verifier=verifier,
         enrich_mobile=cfg.prospeo_enrich_mobile,
     )
