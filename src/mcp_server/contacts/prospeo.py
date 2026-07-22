@@ -205,7 +205,9 @@ class ProspeoFinder:
                 # Log a 0-credit row so the call-count reflects every API
                 # call we made, not just credit-spending hits. Prospeo
                 # doesn't bill these but they are real activity.
-                await self._log_usage(state.api_key, 0, domain, False)
+                await log_usage(
+                    self._usage_pool, PROVIDER, state.api_key, 0, domain,
+                )
                 return None
 
             logger.warning(
@@ -214,9 +216,13 @@ class ProspeoFinder:
                 status, error_code, first_name, last_name, domain,
                 str(body_resp),
             )
-            return None
+            # Unclassified provider-side failure (5xx, malformed envelope):
+            # try the next key rather than declaring the person nonexistent.
+            continue
 
-        return None
+        raise ProviderUnavailableError(
+            "prospeo: every key failed for this request"
+        )
 
     async def _call_one(
         self, api_key: str, body: dict,
