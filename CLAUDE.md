@@ -17,9 +17,20 @@ task asks for one, it is out of scope.
   consumer-hobby shops), keeps only score >= 7, names the one decision-maker.
   The operational copy of the skill is in the `pentest-pipeline` repo; the copy
   under `skills/` here is the reference pairing -- keep them in sync.
-- **Server (this repo):** `resolve_contact` (Prospeo enrich-person pool) +
-  `verify_email` (MyEmailVerifier fallback) + five CRUD/query tools over the
-  `leads` table. Streamable HTTP at `/mcp`, static bearer auth.
+- **Server (this repo):** `resolve_contact` (enrichment chain) + `verify_email`
+  (MyEmailVerifier fallback) + five CRUD/query tools over the `leads` table.
+  Streamable HTTP at `/mcp`, static bearer auth.
+- **Enrichment chain (`ChainedFinder`).** Prospeo's free-tier key pool is the
+  primary tier; Apollo is the failover. The rule that makes it work: a finder
+  returns `None` ONLY for a definitive miss and raises
+  `ProviderUnavailableError` when it could not answer at all (quota spent, keys
+  dead, plan blocked, transport dead). The chain falls through on the
+  exception, and also on a miss when `CONTACT_FALLBACK_ON_NO_MATCH` (default
+  true). Never conflate the two -- a quota wall reported as "no such person"
+  poisons the lead store with false misses. The session sees this as
+  `reason: no_match` vs `reason: provider_unavailable`.
+  Apollo needs a **paid plan**; free/trial keys 403 on `people/match`, get
+  retired after one probe, and the chain degrades to Prospeo-only.
 - Seven tools total: `add_qualified_lead`, `list_leads`, `get_lead`,
   `update_lead_status`, `get_uncontacted`, `resolve_contact`, `verify_email`.
 - **Project partition (shared store).** The `leads` table is shared by more than
