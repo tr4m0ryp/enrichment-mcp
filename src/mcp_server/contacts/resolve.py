@@ -3,18 +3,22 @@
 Distilled from clay's ``email_resolver`` worker into a single write-free
 coroutine. The Claude session has already identified the one decision-maker
 during qualification, so the server just enriches that known person through
-the Prospeo enrich-person pool and confirms the email.
+the configured enrichment chain (Prospeo's free-tier key pool primary,
+Apollo as the failover tier) and confirms the email.
 
 What was deliberately dropped from the original ``_resolve_one``:
   - The grounded-search NO_MATCH fallback (replaced by the session's own
     in-session guess + the ``verify_email`` tool).
   - The always-on worker loop, DB-backed pair fetching, and the
-    persistence step (resolution is now pure -- the only write is Prospeo's
-    own ``prospeo_usage`` logging, owned by the finder).
+    persistence step (resolution is now pure -- the only write is the
+    finders' own ``prospeo_usage`` credit logging).
 
-On Prospeo NO_MATCH this returns ``ContactResult(found=False,
-reason="no_match")`` -- the session decides whether to attempt the
-guess+verify fallback.
+Two distinct not-found signals reach the session, and the difference is
+operationally important: ``reason="no_match"`` means a provider actually
+answered and the person is not in its database (fall back to guess+verify),
+whereas ``reason="provider_unavailable"`` means every provider was out of
+quota or unreachable (a capacity problem -- top up keys, do not conclude
+anything about the person).
 """
 
 from __future__ import annotations
@@ -22,8 +26,8 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
+from .finder import Finder, ProviderUnavailableError
 from .helpers import extract_domain, split_name
-from .prospeo import ProspeoFinder
 from .verifier import MyEmailVerifierAPIError, MyEmailVerifierClient
 from .verify_chain import ChainedEmailVerifier, NoVerifierAvailableError
 
@@ -36,10 +40,12 @@ logger = logging.getLogger(__name__)
 class ContactResult:
     """Pure data return for one resolution attempt.
 
-    ``email`` is only ever populated when verified (Prospeo VERIFIED or
-    MyEmailVerifier Valid), so a non-empty ``email`` always implies
-    ``email_verified is True``. ``reason`` carries the not-found / partial
-    signal the session branches on.
+    ``email`` is only ever populated when verified (the provider's own
+    VERIFIED flag or a positive verifier verdict), so a non-empty ``email``
+    always implies ``email_verified is True``. ``reason`` carries the
+    not-found / partial signal the session branches on. ``source`` names the
+    provider that produced the hit (``prospeo``, ``apollo``, or
+    ``<provider>+verifier`` when the verifier chain confirmed the address).
     """
 
     found: bool = False
@@ -57,48 +63,61 @@ async def resolve_contact(
     person_name: str,
     role: str = "",
     *,
-    prospeo: ProspeoFinder,
+    finder: Finder,
     verifier: _Verifier | None = None,
     enrich_mobile: bool = False,
 ) -> ContactResult:
-    """Resolve one known person to a verified contact via Prospeo.
+    """Resolve one known person to a verified contact via the finder chain.
 
     1. ``split_name`` the person, ``extract_domain`` the website.
-    2. ``prospeo.find(first, last, domain)``. On a hit take
-       email / linkedin / title; accept the email if Prospeo flags it
-       VERIFIED, otherwise run ``verifier.verify`` and accept only if
-       valid. ``source`` is ``"prospeo"`` or ``"prospeo+verifier"``.
-    3. On Prospeo ``None`` (NO_MATCH) return ``found=False,
-       reason="no_match"`` -- no fallback here.
+    2. ``finder.find(first, last, domain)``. The chain tries Prospeo first and
+       fails over to Apollo when Prospeo is out of quota, dead, or (by
+       default) returns no match. On a hit take email / linkedin / title;
+       accept the email if the provider flags it verified, otherwise run
+       ``verifier.verify`` and accept only if valid. ``source`` is the
+       winning provider, suffixed ``+verifier`` when the chain confirmed it.
+    3. On a definitive miss return ``found=False, reason="no_match"``.
+    4. When no provider could answer at all, return ``found=False,
+       reason="provider_unavailable"`` -- explicitly NOT a miss.
     """
     first, last = split_name(person_name)
     clean_domain = extract_domain(domain)
     if not first or not clean_domain:
         return ContactResult(found=False, reason="insufficient_input")
 
-    if prospeo is None or not prospeo.enabled:
-        return ContactResult(found=False, reason="prospeo_unavailable")
+    if finder is None or not finder.enabled:
+        return ContactResult(found=False, reason="provider_unavailable")
 
-    hit = await prospeo.find(
-        first, last, clean_domain, enrich_mobile=enrich_mobile,
-    )
+    try:
+        hit = await finder.find(
+            first, last, clean_domain, enrich_mobile=enrich_mobile,
+        )
+    except ProviderUnavailableError as exc:
+        logger.warning(
+            "resolve_contact: no enrichment provider could answer for "
+            "%s %s @ %s: %s",
+            first, last, clean_domain, exc,
+        )
+        return ContactResult(found=False, reason="provider_unavailable")
+
     if hit is None:
         return ContactResult(found=False, reason="no_match")
 
+    provider = hit.provider or "unknown"
     linkedin_url = hit.linkedin_url or ""
     job_title = hit.job_title or ""
 
-    # Prospeo matched the person but gave no email (linkedin-only record).
+    # Provider matched the person but gave no email (linkedin-only record).
     if not hit.email:
         return ContactResult(
             found=bool(linkedin_url),
             linkedin_url=linkedin_url,
             job_title=job_title,
-            source="prospeo" if linkedin_url else "none",
+            source=provider if linkedin_url else "none",
             reason="" if linkedin_url else "no_email",
         )
 
-    # Prospeo's own MX-level check passed -- accept without a second call.
+    # The provider's own MX-level check passed -- accept without a second call.
     if hit.email_verified:
         return ContactResult(
             found=True,
@@ -106,10 +125,10 @@ async def resolve_contact(
             email_verified=True,
             linkedin_url=linkedin_url,
             job_title=job_title,
-            source="prospeo",
+            source=provider,
         )
 
-    # Unverified email: confirm with MyEmailVerifier, accept only if valid.
+    # Unverified email: confirm with the verifier chain, accept only if valid.
     if await _verify(hit.email, verifier):
         return ContactResult(
             found=True,
@@ -117,19 +136,19 @@ async def resolve_contact(
             email_verified=True,
             linkedin_url=linkedin_url,
             job_title=job_title,
-            source="prospeo+verifier",
+            source=f"{provider}+verifier",
         )
 
     logger.info(
-        "resolve_contact: Prospeo email %s did not verify; "
+        "resolve_contact: %s email %s did not verify; "
         "keeping linkedin/title only",
-        hit.email,
+        provider, hit.email,
     )
     return ContactResult(
         found=bool(linkedin_url),
         linkedin_url=linkedin_url,
         job_title=job_title,
-        source="prospeo" if linkedin_url else "none",
+        source=provider if linkedin_url else "none",
         reason="email_unverified",
     )
 
