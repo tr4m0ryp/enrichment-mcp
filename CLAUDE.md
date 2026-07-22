@@ -68,8 +68,12 @@ python -m src.mcp_server        # serves HTTP on MCP_HOST:MCP_PORT at /mcp
 
 ## Environment (.env -- see .env.example)
 - `SUPABASE_DB_URL` -- full Postgres DSN for the lead store (required)
-- `PROSPEO_API_KEYS` -- comma-separated enrich-person keys
+- `PROSPEO_API_KEYS` -- comma-separated enrich-person keys (primary tier)
 - `PROSPEO_ENRICH_MOBILE` -- pull mobile numbers (10x credits); default false
+- `APOLLO_API_KEYS` -- comma-separated Apollo keys (failover tier). Empty =
+  Prospeo-only, identical to the pre-Apollo server. Needs a paid Apollo plan.
+- `CONTACT_FALLBACK_ON_NO_MATCH` -- also fail over on a miss, not just on
+  quota exhaustion; default true
 - `MYEMAILVERIFIER_API_KEY` -- verifier key for the fallback path
 - `MCP_BEARER_TOKEN` -- static bearer the server enforces
 - `LEADS_PROJECT` -- lead partition this instance serves (`pentest` | `avelero`);
