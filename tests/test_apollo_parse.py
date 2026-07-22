@@ -24,7 +24,7 @@ import json
 import sys
 from pathlib import Path
 
-from src.mcp_server.contacts.apollo import ApolloFinder
+from src.mcp_server.contacts.apollo import ApolloFinder, extract_person
 
 FIXTURE = Path(__file__).parent / "fixtures" / "apollo_person_match.json"
 PERSON = json.loads(FIXTURE.read_text())
@@ -37,7 +37,7 @@ def check(name: str, ok: bool, detail: str = "") -> None:
 
 
 def test_extracts_real_person() -> None:
-    r = ApolloFinder._extract(PERSON)
+    r = extract_person(PERSON)
     check("email parsed", r.email == "tim@apollo.io", r.email)
     check("verified status honoured", r.email_verified is True)
     check("job title parsed", r.job_title == "Founder & CEO", r.job_title)
@@ -52,7 +52,7 @@ def test_guessed_email_is_not_pre_verified() -> None:
     """A pattern-guessed address must still go through the verifier chain."""
     p = copy.deepcopy(PERSON)
     p["email_status"] = "guessed"
-    r = ApolloFinder._extract(p)
+    r = extract_person(p)
     check("guessed keeps the email", r.email == "tim@apollo.io")
     check("guessed is not marked verified", r.email_verified is False)
 
@@ -62,7 +62,7 @@ def test_locked_placeholder_is_dropped() -> None:
     p = copy.deepcopy(PERSON)
     p["email"] = "email_not_unlocked@domain.com"
     p["email_status"] = "verified"
-    r = ApolloFinder._extract(p)
+    r = extract_person(p)
     check("locked placeholder dropped", r.email == "", r.email)
     check("locked placeholder not verified", r.email_verified is False)
 
@@ -71,7 +71,7 @@ def test_dead_statuses_drop_the_email() -> None:
     for status in ("bounced", "unavailable", "invalid"):
         p = copy.deepcopy(PERSON)
         p["email_status"] = status
-        r = ApolloFinder._extract(p)
+        r = extract_person(p)
         check(f"{status} email dropped", r.email == "", r.email)
 
 
@@ -84,7 +84,7 @@ def test_phone_prefers_mobile() -> None:
          "type": "mobile", "status": "valid_number"},
     ]
     check("mobile preferred over work number",
-          ApolloFinder._extract(p).phone == "+11235550126")
+          extract_person(p).phone == "+11235550126")
 
     p2 = copy.deepcopy(PERSON)
     p2["phone_numbers"] = [
@@ -92,18 +92,18 @@ def test_phone_prefers_mobile() -> None:
          "type": None, "status": "valid_number"},
     ]
     check("untyped number still kept",
-          ApolloFinder._extract(p2).phone == "+11235550158")
+          extract_person(p2).phone == "+11235550158")
 
     p3 = copy.deepcopy(PERSON)
     p3["phone_numbers"] = [{"raw_number": "", "sanitized_number": "", "type": None}]
-    check("empty numbers ignored", ApolloFinder._extract(p3).phone == "")
+    check("empty numbers ignored", extract_person(p3).phone == "")
 
 
 def test_missing_fields_do_not_raise() -> None:
     for person in ({}, {"email": None, "title": None, "linkedin_url": None,
                         "email_status": None, "phone_numbers": None}):
         try:
-            r = ApolloFinder._extract(person)
+            r = extract_person(person)
             check("sparse person parses to empties",
                   r.email == "" and r.job_title == "" and r.phone == "")
         except Exception as exc:  # noqa: BLE001
