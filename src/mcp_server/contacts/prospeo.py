@@ -170,13 +170,16 @@ class ProspeoFinder:
                         bool(result.email), bool(result.linkedin_url),
                         bool(result.phone), credits, free_dedup,
                     )
-                    await self._log_usage(
-                        state.api_key, credits, domain, free_dedup,
+                    await log_usage(
+                        self._usage_pool, PROVIDER, state.api_key,
+                        credits, domain, free_dedup,
                     )
                     return result
                 # Empty result body -- treat as miss without rotating.
                 # Log a 0-credit row so the call-count reflects it.
-                await self._log_usage(state.api_key, 0, domain, False)
+                await log_usage(
+                    self._usage_pool, PROVIDER, state.api_key, 0, domain,
+                )
                 return None
 
             if status == 401 or error_code == "INVALID_API_KEY":
