@@ -6,7 +6,7 @@ Selling a penetration-testing / bug-bounty service is a **high-consideration, lo
 
 **enrichment-mcp** inverts that. It is a depth-first lead finder: per run it surfaces a *handful* of candidate **custom-built B2B / high-blast-radius commerce operators** (distributors, wholesalers, B2B webshops, marketplaces, trade platforms holding valuable/sensitive customer data -- not low-stakes B2C consumer-hobby shops), qualifies them hard, and for each keeper resolves the **single best decision-maker**. The deliverable stops at a stored, qualified lead carrying **lean context** -- enough to recognise the company, one verified contact, and a one-line "why". A human decides what to do next; the system never reaches out and never tests anything.
 
-The design splits cleanly across two execution contexts. **Claude** (in claude.ai or Claude Code) runs discovery and qualification *in-session* using its own `web_search` / `web_fetch` -- no third-party search API, no LLM key pool. A thin **[FastMCP](https://gofastmcp.com) server** does only the two things the chat sandbox cannot: paid contact resolution through **Prospeo** (an outbound API the sandbox blocks) and a **durable lead store** that remembers state across sessions. This is a ground-up rebuild of an older volume-funnel pipeline (`clay-enrichment`); roughly 5,000 lines of key-pool and worker machinery were dropped, four assets salvaged.
+The design splits cleanly across two execution contexts. **Claude** (in claude.ai or Claude Code) runs discovery and qualification *in-session* using its own `web_search` / `web_fetch` -- no third-party search API, no LLM key pool. A thin **[FastMCP](https://gofastmcp.com) server** does only the two things the chat sandbox cannot: paid contact resolution through an enrichment chain -- **Prospeo** primary, **Apollo** failover (outbound APIs the sandbox blocks) and a **durable lead store** that remembers state across sessions. This is a ground-up rebuild of an older volume-funnel pipeline (`clay-enrichment`); roughly 5,000 lines of key-pool and worker machinery were dropped, four assets salvaged.
 
 ## How It Works
 
@@ -23,8 +23,10 @@ For each run, Claude drives the loop and calls the server only when it must:
     FastMCP server  ── 7 tools, bearer auth, Streamable HTTP at /mcp
         │
         ▼
-  Supabase Postgres            Prospeo enrich-person        MyEmailVerifier
-  (leads + prospeo_usage)      (X-KEY multi-key pool)       (validate_single)
+  Supabase Postgres        Prospeo enrich-person  ─┐      MyEmailVerifier
+  (leads + prospeo_usage)  (X-KEY multi-key pool)  ├─►   (validate_single)
+                           Apollo people/match    ─┘
+                           (x-api-key, failover)
 ```
 
 The qualification loop is deliberately **discard-heavy**:
@@ -32,11 +34,13 @@ The qualification loop is deliberately **discard-heavy**:
 1. **Discover** -- run one to three angles via `web_search` to surface a handful of candidates (not a funnel).
 2. **Qualify hard** -- `web_fetch` each site and score it 0-10 against the ICP: is it a **custom (non-platform)** stack, is it **receptive** (no existing public bounty program, no in-house AppSec), is its breach **blast-radius** high (**B2B / distributor / marketplace** holding valuable/sensitive customer data -- a gated criterion; low-stakes B2C hobby shops are out), is it **right-sized** to pay and stay unwatched, is there a **reachable** technical decision-maker.
 3. **Keep only winners** -- discard anything under the `>=7` gate immediately and explicitly. Quality over count.
-4. **Resolve one contact** -- name the single best decision-maker, then call `resolve_contact`; the server runs the Prospeo pool and returns one verified email + LinkedIn + title.
-5. **Fallback on miss** -- on Prospeo `NO_MATCH`, mine the site's team/about pages in-session, guess the email pattern, and confirm with `verify_email`; accept only a `Valid` result.
+4. **Resolve one contact** -- name the single best decision-maker, then call `resolve_contact`; the server runs the enrichment chain (Prospeo, then Apollo if Prospeo is out of quota or has no record) and returns one verified email + LinkedIn + title, tagged with the provider that found it.
+5. **Fallback on miss** -- on `reason: no_match` (every provider answered, none had the person), mine the site's team/about pages in-session, guess the email pattern, and confirm with `verify_email`; accept only a `Valid` result.
 6. **Store lean** -- write the lead via `add_qualified_lead`. If no contact resolves, the company is still stored (flagged), never thrown away.
 
-**Data-flow invariant:** web tools run in the session; Prospeo and state run on the server. The server holds **no loop, no scheduler, no autonomous discovery** -- it only acts when Claude calls a tool.
+Distinguish `no_match` from `reason: provider_unavailable`: the latter means every provider was out of quota or unreachable, so nothing was learned about the person -- top up credits rather than falling back to a guess.
+
+**Data-flow invariant:** web tools run in the session; enrichment and state run on the server. The server holds **no loop, no scheduler, no autonomous discovery** -- it only acts when Claude calls a tool.
 
 ## Targeting Scope
 
@@ -83,8 +87,10 @@ psql "$SUPABASE_DB_URL" -f schema/004_project_partition.sql
 | Variable | Purpose |
 |---|---|
 | `SUPABASE_DB_URL` | Full Postgres DSN to the lead store (**required**) |
-| `PROSPEO_API_KEYS` | Comma-separated Prospeo keys (free-tier pool, rotated round-robin) |
-| `PROSPEO_ENRICH_MOBILE` | `false` = email-only (1 credit); `true` = include mobile (10 credits) |
+| `PROSPEO_API_KEYS` | Comma-separated Prospeo keys (free-tier pool, rotated round-robin) -- primary tier |
+| `PROSPEO_ENRICH_MOBILE` | `false` = email-only (1 credit); `true` = include mobile (10 credits). Prospeo only |
+| `APOLLO_API_KEYS` | Comma-separated Apollo keys -- failover tier. Empty = Prospeo-only. **Needs a paid Apollo plan**; free/trial keys 403 on `people/match` |
+| `CONTACT_FALLBACK_ON_NO_MATCH` | `true` (default) also fails over on a miss, not only on quota exhaustion |
 | `MYEMAILVERIFIER_API_KEY` | MyEmailVerifier key for the guess-and-verify fallback |
 | `MCP_BEARER_TOKEN` | Static bearer the server requires on every request |
 | `MCP_HOST` / `MCP_PORT` | Bind address / port (default `0.0.0.0` / `8000`) |
@@ -156,9 +162,11 @@ large lists stay under the MCP output cap; `get_lead` returns the full row.
 | `src/mcp_server/config.py` | Typed config -- plain `@dataclass` + `python-dotenv`, no pydantic |
 | `src/mcp_server/db/pool.py` | asyncpg pool built from `SUPABASE_DB_URL` |
 | `src/mcp_server/db/leads.py` | The five lead-store operations (parametrized, dict returns) |
-| `src/mcp_server/contacts/prospeo.py` + `prospeo_pool.py` | Multi-key Prospeo `enrich-person` client with round-robin rotation |
+| `src/mcp_server/contacts/finder.py` | Shared `EnrichmentResult` + `ProviderUnavailableError` + `ChainedFinder` failover |
+| `src/mcp_server/contacts/prospeo.py` + `key_pool.py` | Multi-key Prospeo `enrich-person` client with round-robin rotation |
+| `src/mcp_server/contacts/apollo.py` | Multi-key Apollo `people/match` client; retires plan-blocked keys after one probe |
 | `src/mcp_server/contacts/verifier.py` | MyEmailVerifier client (inlined `VerifyResult`) |
-| `src/mcp_server/contacts/resolve.py` | Write-free `resolve_contact` core: Prospeo primary -> verify |
+| `src/mcp_server/contacts/resolve.py` | Write-free `resolve_contact` core: finder chain -> verify |
 | `src/mcp_server/tools/` | `@mcp.tool` wrappers over the db and contacts layers |
 | `skills/lead-finder/` | The Claude-side skill: `SKILL.md` + `references/icp.md` + `references/angles.md` |
 
@@ -177,7 +185,7 @@ One `leads` table, keyed on `domain`:
 | `contact_name/role/email/linkedin/email_verified` | The one best contact -- all nullable |
 | `created_at`, `updated_at` | `updated_at` maintained by trigger |
 
-A second table, `prospeo_usage`, meters credit burn across the key pool.
+A second table, `prospeo_usage`, meters credit burn across the key pools. Its `provider` column (schema `005`) splits Prospeo spend from Apollo spend; the table keeps its original name for migration safety.
 
 ### Credit model
 
@@ -186,6 +194,8 @@ A second table, `prospeo_usage`, meters credit burn across the key pool.
 | Prospeo `enrich-person` (email) | **1 credit** | NO_MATCH is **free** |
 | Prospeo `enrich-person` (mobile) | 10 credits | free |
 | Prospeo duplicate within ~90 days | free | -- |
+| Apollo `people/match` (email) | **1 credit** | no-data is **free** |
+| Apollo `people/match` (+ mobile) | up to 9 credits | free |
 | MyEmailVerifier `validate_single` | 1 credit | 1 credit (still returns a status) |
 
 Depth-first targeting keeps these low by design -- one resolution per kept lead, not per candidate.
@@ -199,7 +209,7 @@ The server runs on **Google Cloud Run** as a container: automatic HTTPS, a publi
 ```bash
 gcloud run deploy enrichment-mcp --source . --region <region> \
   --allow-unauthenticated --max-instances 1 \
-  --set-secrets=MCP_BEARER_TOKEN=MCP_BEARER_TOKEN:latest,SUPABASE_DB_URL=SUPABASE_DB_URL:latest,PROSPEO_API_KEYS=PROSPEO_API_KEYS:latest,MYEMAILVERIFIER_API_KEY=MYEMAILVERIFIER_API_KEY:latest
+  --set-secrets=MCP_BEARER_TOKEN=MCP_BEARER_TOKEN:latest,SUPABASE_DB_URL=SUPABASE_DB_URL:latest,PROSPEO_API_KEYS=PROSPEO_API_KEYS:latest,APOLLO_API_KEYS=APOLLO_API_KEYS:latest,MYEMAILVERIFIER_API_KEY=MYEMAILVERIFIER_API_KEY:latest
 ```
 
 Cloud Run pins secret versions per revision, so after updating a secret value, redeploy (or roll a new revision) to pick it up.
