@@ -87,24 +87,28 @@ class ProspeoFinder:
         domain: str,
         *,
         enrich_mobile: bool = False,
-    ) -> ProspeoResult | None:
+    ) -> EnrichmentResult | None:
         """Enrich one (first, last, domain) triple.
 
-        Returns ``None`` when:
+        Returns ``None`` only on a definitive miss:
           - first_name or domain is empty (no call made),
-          - all keys are exhausted / dead,
           - Prospeo returns NO_MATCH or INVALID_DATAPOINTS for this
-            specific contact (definitive miss, not a key issue),
-          - a transport-level error occurs on every available key.
+            specific contact (a real answer about this person),
+          - Prospeo matched but the record carried nothing usable.
 
-        On success returns a ``ProspeoResult`` whose fields are stripped
+        Raises ``ProviderUnavailableError`` when Prospeo could not answer at
+        all -- no keys configured, every key exhausted or dead, or a
+        transport-level error on every available key. The chain treats that
+        as "ask the next provider", never as "this person does not exist".
+
+        On success returns an ``EnrichmentResult`` whose fields are stripped
         and lower-cased where applicable. The caller decides how to
         persist them.
         """
         if not first_name or not domain:
             return None
         if not self.enabled:
-            return None
+            raise ProviderUnavailableError("prospeo: no usable API keys")
 
         body = {
             "only_verified_email": False,
