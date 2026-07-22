@@ -239,38 +239,8 @@ class ProspeoFinder:
                     parsed = None
                 return r.status, parsed
 
-    async def _log_usage(
-        self,
-        api_key: str,
-        credits: int,
-        domain: str,
-        free_dedup: bool,
-    ) -> None:
-        """Record one Prospeo call to ``prospeo_usage``.
-
-        Failures are swallowed -- never block a resolution because we
-        couldn't write a metrics row.
-        """
-        if self._usage_pool is None:
-            return
-        try:
-            async with self._usage_pool.acquire() as conn:
-                await conn.execute(
-                    """
-                    INSERT INTO prospeo_usage
-                        (key_prefix, credits, domain, free_dedup)
-                    VALUES ($1, $2, $3, $4)
-                    """,
-                    redact(api_key), int(credits), domain, bool(free_dedup),
-                )
-        except Exception:
-            logger.exception(
-                "ProspeoFinder: failed to log usage row "
-                "(non-fatal -- continuing)",
-            )
-
     @staticmethod
-    def _extract(body: dict) -> ProspeoResult:
+    def _extract(body: dict) -> EnrichmentResult:
         person = body.get("person") or {}
         email_obj = person.get("email") or {}
         mobile_obj = person.get("mobile") or {}
