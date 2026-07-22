@@ -32,6 +32,20 @@ class Config:
     prospeo_api_keys: list[str] = field(default_factory=list)
     prospeo_enrich_mobile: bool = False
 
+    # Apollo.io people/match keys -- the failover tier behind Prospeo. Pooled
+    # the same way, but Apollo gates this endpoint by plan: a key on a free or
+    # trial plan gets 403 API_INACCESSIBLE, which retires that key after one
+    # probe so resolution silently degrades to Prospeo-only. Apollo is skipped
+    # entirely when unset, which is the pre-Apollo behaviour exactly.
+    apollo_api_keys: list[str] = field(default_factory=list)
+
+    # Whether the finder chain also fails over when a provider answers "no such
+    # person" (as opposed to only on quota/outage). Providers hold different
+    # databases and bill nothing when they return no data, so a second opinion
+    # is close to free -- hence default on. Set false to spend Apollo credits
+    # ONLY when Prospeo is actually down or exhausted.
+    contact_fallback_on_no_match: bool = True
+
     # QuickEmailVerification key pool -- primary tier of the guess+verify
     # fallback (the verify_email tool). Comma-separated free-tier keys, 100
     # verifications/day each; pools the same way PROSPEO_API_KEYS does.
