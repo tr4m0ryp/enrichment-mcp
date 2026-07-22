@@ -32,7 +32,7 @@ async def main() -> int:
     # unimportable anywhere without live credentials.
     from src.mcp_server.server import build_server, mcp
 
-    tools = set(await mcp.get_tools())
+    tools = {t.name for t in await mcp.list_tools()}
     check("seven tools still registered", tools == EXPECTED_TOOLS,
           str(sorted(tools ^ EXPECTED_TOOLS)) if tools != EXPECTED_TOOLS else "")
     check("build_server is repeatable", isinstance(build_server(), type(mcp)))
