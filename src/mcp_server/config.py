@@ -102,6 +102,14 @@ def _load_config() -> Config:
         prospeo_enrich_mobile=os.environ.get(
             "PROSPEO_ENRICH_MOBILE", "false",
         ).strip().lower() == "true",
+        apollo_api_keys=[
+            k.strip()
+            for k in os.environ.get("APOLLO_API_KEYS", "").split(",")
+            if k.strip()
+        ],
+        contact_fallback_on_no_match=os.environ.get(
+            "CONTACT_FALLBACK_ON_NO_MATCH", "true",
+        ).strip().lower() != "false",
         quickemailverification_api_keys=[
             k.strip()
             for k in os.environ.get(
